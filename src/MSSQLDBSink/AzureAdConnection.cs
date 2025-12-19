@@ -1,7 +1,7 @@
 using Microsoft.Data.SqlClient;
-using SQLServerSink.Interfaces;
+using MSSQLDBSink.Interfaces;
 
-namespace SQLServerSink;
+namespace MSSQLDBSink;
 
 public class AzureAdConnection : IAzureAdConnection
 {

@@ -1,4 +1,4 @@
-namespace SQLServerSink;
+namespace MSSQLDBSink;
 
 using System.Collections.Concurrent;
 
@@ -8,22 +8,22 @@ public class SyncRunResult
     public DateTime StartTime { get; set; } = DateTime.UtcNow;
     public DateTime? EndTime { get; set; }
     public SyncParameters Parameters { get; set; } = new();
-    
+
     // Using ConcurrentDictionary to prevent duplicate table entries and support thread-safe access
     private ConcurrentDictionary<string, TableSyncResult> _tableResults = new(StringComparer.OrdinalIgnoreCase);
-    
-    public List<TableSyncResult> Tables 
-    { 
+
+    public List<TableSyncResult> Tables
+    {
         get => _tableResults.Values.ToList();
         set => _tableResults = new ConcurrentDictionary<string, TableSyncResult>(
             value.ToDictionary(t => t.TableName, t => t, StringComparer.OrdinalIgnoreCase));
     }
-    
+
     public void AddOrUpdateTable(TableSyncResult tableResult)
     {
         _tableResults.AddOrUpdate(tableResult.TableName, tableResult, (key, existing) => tableResult);
     }
-    
+
     public string Status { get; set; } = "Running"; // "Running", "Completed", "Failed"
 }
 

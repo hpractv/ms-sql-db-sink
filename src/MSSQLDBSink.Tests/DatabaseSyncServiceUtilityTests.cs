@@ -1,8 +1,8 @@
 using System;
 using System.Reflection;
-using SQLServerSink;
+using MSSQLDBSink;
 
-namespace SQLServerSink.Tests;
+namespace MSSQLDBSink.Tests;
 
 public class DatabaseSyncServiceUtilityTests
 {

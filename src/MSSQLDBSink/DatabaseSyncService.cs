@@ -7,9 +7,9 @@ using Polly;
 using System.Collections.Concurrent;
 using Spectre.Console;
 using ConsoleProgressBar;
-using SQLServerSink.Interfaces;
+using MSSQLDBSink.Interfaces;
 
-namespace SQLServerSink;
+namespace MSSQLDBSink;
 
 public class DatabaseSyncService : IDatabaseSyncService
 {

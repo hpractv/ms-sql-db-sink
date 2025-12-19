@@ -98,4 +98,4 @@ When using connection strings (`--source-conn`/`--target-conn`), authentication 
 5. Review JSON result files in `results/` directory
 
 ---
-**Project**: SQLServerSink | **Framework**: .NET 10.0
+**Project**: MSSQLDBSink | **Framework**: .NET 10.0

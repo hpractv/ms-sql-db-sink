@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Data.Common;
 using System.Reflection;
 using Microsoft.Data.SqlClient;
-using SQLServerSink;
+using MSSQLDBSink;
 
-namespace SQLServerSink.Tests;
+namespace MSSQLDBSink.Tests;
 
 public class DatabaseSyncServiceTests
 {

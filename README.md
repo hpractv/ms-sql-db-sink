@@ -1,6 +1,12 @@
-# SQL Server Sink
+# MSSQLDBSink
 
 A high-performance C# console application that synchronizes records from a source SQL Server database to a target database, inserting only records that don't exist in the target.
+
+This project intends to be the "kitchen sink" solution for transferring SQL Server database data, capable of handling various scenarios, edge cases, and data topologies.
+
+> [!CAUTION]
+> **WARNING: USE AT YOUR OWN RISK. ALWAYS BACK UP YOUR DATA BEFORE USING THIS TOOL.**
+> This tool modifies data in the target database. While checks are in place and the tool detects primary keys to avoid duplicates, data loss or corruption is possible if used incorrectly or if unexpected errors occur. The authors provide no warranty or guarantee.
 
 ## Features
 
@@ -38,7 +44,7 @@ A high-performance C# console application that synchronizes records from a sourc
 ### Command Line Syntax
 
 ```bash
-SQLServerSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
+MSSQLDBSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
 ```
 
 ### Arguments
@@ -121,57 +127,10 @@ The tool generates JSON result files in the output directory (default: `results/
 - Per-table sync results (status, counts, duration, errors)
 - Enables manual resume by identifying failed/skipped tables
 
-## Performance Tips
-
-- **Batch Size**: Adjust based on your record size and network speed
-  - Smaller batches (100-500): Better for large records or slow networks
-  - Larger batches (2000-5000): Better for small records or fast networks
-- **Threads**: Use `--threads` to parallelize table syncing (be mindful of database connection limits)
-- **Clear Target**: Use `--clear-target` for full refresh scenarios (much faster than row-by-row)
-- **Indexes**: Ensure primary keys are properly indexed in both databases
-- **Network**: Run from a location with good connectivity to both databases
-- **Peak Hours**: Schedule large syncs during off-peak hours
-
-## Limitations
-
-- Target tables must already exist with matching schema
-- By default, requires primary keys on tables (use `--allow-no-pk --deep-compare` for tables without PKs)
-- Does not update existing records (insert-only, unless `--clear-target`)
-- Does not delete records from target that don't exist in source
-- Count optimization skips tables where target >= source (unless `--clear-target`)
-
-## Security Notes
-
-- Connection strings may contain sensitive information - handle with care
-- Consider using Azure Key Vault for storing connection strings in production
-- Use least-privilege database accounts (INSERT and SELECT permissions only)
-- Enable firewall rules on SQL Server to restrict access
-
-## Troubleshooting
-
-### "Table has no primary key. Skipping..."
-- The table doesn't have a primary key defined
-- Use `--allow-no-pk --deep-compare` to sync tables without PKs
-
-### "Target has same or more records. Skipping..."
-- Target already has all records from source
-- Use `--clear-target` if you want to replace all data
-
-### "Connection timeout"
-- Check firewall rules on SQL Server
-- Verify connection strings are correct
-- Ensure your IP is whitelisted
-
-### "Permission denied"
-- Database user needs SELECT permission on source
-- Database user needs INSERT permission on target
-- Database user needs VIEW DEFINITION permission to read metadata
-- For `--clear-target`, user needs DELETE/TRUNCATE permission
-
 ## License
 
-This project is licensed under the GNU General Public License v3.0. See [LICENSE](../LICENSE) for details.
+This project is licensed under a custom license. It is free for non-commercial use but cannot be included in other projects or redistributed. See [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-Feel free to submit issues, fork the repository, and create pull requests for any improvements.
+Feel free to submit issues.

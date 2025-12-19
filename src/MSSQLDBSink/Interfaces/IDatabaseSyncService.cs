@@ -1,4 +1,4 @@
-namespace SQLServerSink.Interfaces;
+namespace MSSQLDBSink.Interfaces;
 
 /// <summary>
 /// Interface for database synchronization services.
@@ -13,7 +13,7 @@ public interface IDatabaseSyncService
     /// <param name="parameters">Additional sync parameters</param>
     /// <returns>Task representing the async operation</returns>
     Task SyncTablesAsync(IEnumerable<string> selections, int threadCount = 1, SyncParameters? parameters = null);
-    
+
     /// <summary>
     /// Synchronizes a single table from source to target database.
     /// </summary>
@@ -21,7 +21,7 @@ public interface IDatabaseSyncService
     /// <param name="progressTask">Optional progress task for tracking</param>
     /// <returns>Task representing the async operation</returns>
     Task SyncTableAsync(string tableName, Spectre.Console.ProgressTask? progressTask = null);
-    
+
     /// <summary>
     /// Compares record counts and schema differences between source and target databases for selected tables.
     /// </summary>

@@ -1,12 +1,12 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
-using SQLServerSink;
+using MSSQLDBSink;
 using McMaster.Extensions.CommandLineUtils;
 using Spectre.Console;
 
-namespace SQLServerSink;
+namespace MSSQLDBSink;
 
-[Command(Name = "SQLServerSink", Description = "Synchronizes records between SQL Server databases.")]
+[Command(Name = "MSSQLDBSink", Description = "Synchronizes records between SQL Server databases.")]
 [HelpOption("-?|-h|--help")]
 class Program
 {
@@ -62,7 +62,7 @@ class Program
 
     private async Task OnExecuteAsync()
     {
-        AnsiConsole.Write(new FigletText("SQL Server Sink").Color(Color.Cyan1));
+        AnsiConsole.Write(new FigletText("MS SQL DB Sink").Color(Color.Cyan1));
         AnsiConsole.WriteLine();
 
         // Validate arguments

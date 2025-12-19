@@ -1,4 +1,4 @@
-# PowerShell Script for SQL Server Sink
+# PowerShell Script for MSSQLDBSink
 # Usage: .\run-sync.ps1 -SourceServer "..." -SourceDb "..." -TargetServer "..." -TargetDb "..." [-TableName "dbo.Users"] [options]
 
 param(
@@ -36,7 +36,7 @@ param(
     [string]$OutputDir = "results"
 )
 
-Write-Host "SQL Server Sink - Database Record Sync Tool" -ForegroundColor Cyan
+Write-Host "MS SQL DB Sink - Database Record Sync Tool" -ForegroundColor Cyan
 Write-Host "===========================================" -ForegroundColor Cyan
 Write-Host ""
 

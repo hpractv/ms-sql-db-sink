@@ -1,18 +1,20 @@
-                    GNU GENERAL PUBLIC LICENSE
-                       Version 3, 29 June 2007
+MSSQLDBSink LICENSE
 
- Copyright (C) 2025 SQLServerSink Contributors
+Copyright (C) 2025 MSSQLDBSink Contributors
 
- This program is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version.
+TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 
- This program is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
+1. NON-COMMERCIAL USE
+   This software is free for non-commercial use. You may use this software for personal, educational, or internal non-profit purposes without charge.
 
- You should have received a copy of the GNU General Public License
- along with this program.  If not, see <https://www.gnu.org/licenses/>.
+2. REDISTRIBUTION AND INCLUSION
+   You are NOT allowed to include this software (source code or binaries) in other projects, applications, or libraries. You are NOT allowed to redistribute this software as part of another software package.
 
+3. LINKING
+   You are allowed to link to this project from other projects or websites.
+
+4. NO WARRANTY
+   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+5. USE AT YOUR OWN RISK
+   You use this software entirely at your own risk. The authors are not responsible for any data loss, corruption, or other damages that may occur during the use of this software. BACK UP YOUR DATA BEFORE USE.
