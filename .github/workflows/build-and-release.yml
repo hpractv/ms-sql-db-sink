@@ -8,6 +8,11 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
 env:
   DOTNET_VERSION: '10.0.x'
   PROJECT_PATH: 'src/MSSQLDBSink/MSSQLDBSink.csproj'
