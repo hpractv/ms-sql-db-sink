@@ -1,0 +1,885 @@
+name: Build and Release
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+  release:
+    types: [published]
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  PROJECT_PATH: 'src/MSSQLDBSink/MSSQLDBSink.csproj'
+  TEST_PROJECT_PATH: 'src/MSSQLDBSink.Tests/MSSQLDBSink.Tests.csproj'
+
+jobs:
+  check-changes:
+    name: Check for Application Code Changes
+    runs-on: ubuntu-latest
+    outputs:
+      src_changed: ${{ steps.filter.outputs.src_changed }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for changes in src directory
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            echo "src_changed=true" >> $GITHUB_OUTPUT
+            echo "Release event - building artifacts"
+          elif [ "${{ github.event_name }}" == "push" ]; then
+            echo "src_changed=true" >> $GITHUB_OUTPUT
+            echo "Push to main - building artifacts"
+          else
+            # For pull requests, check if src/ directory has changes
+            git fetch origin ${{ github.base_ref }}
+            if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q "^src/"; then
+              echo "src_changed=true" >> $GITHUB_OUTPUT
+              echo "Application code changed - will build artifacts"
+            else
+              echo "src_changed=false" >> $GITHUB_OUTPUT
+              echo "No application code changes - skipping artifact builds"
+            fi
+          fi
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: check-changes
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Get latest main branch release
+        if: needs.check-changes.outputs.src_changed == 'false'
+        id: get-release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            
+            // Find the latest non-prerelease from main branch
+            const mainRelease = releases.find(release => 
+              !release.prerelease && 
+              !release.tag_name.includes('-pr')
+            );
+            
+            if (mainRelease) {
+              console.log(`Found latest main release: ${mainRelease.tag_name}`);
+              core.setOutput('tag_name', mainRelease.tag_name);
+              core.setOutput('release_id', mainRelease.id);
+              return mainRelease.tag_name;
+            } else {
+              console.log('No main branch release found');
+              core.setOutput('tag_name', '');
+              core.setOutput('release_id', '');
+              return '';
+            }
+
+      - name: Download artifacts from main release
+        if: needs.check-changes.outputs.src_changed == 'false' && steps.get-release.outputs.tag_name != ''
+        run: |
+          TAG_NAME="${{ steps.get-release.outputs.tag_name }}"
+          echo "Downloading artifacts from release: $TAG_NAME"
+          
+          # Download the Linux x64 artifact for testing
+          ARTIFACT_NAME="MSSQLDBSink-linux-x64-${TAG_NAME#v}.tar.gz"
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/$TAG_NAME/$ARTIFACT_NAME"
+          
+          echo "Downloading from: $DOWNLOAD_URL"
+          mkdir -p ./artifacts-from-main
+          curl -L -o "./artifacts-from-main/$ARTIFACT_NAME" "$DOWNLOAD_URL" || {
+            echo "Failed to download artifact from main release"
+            echo "Will build from source instead"
+            echo "skip_artifact_test=true" >> $GITHUB_ENV
+          }
+          
+          if [ -f "./artifacts-from-main/$ARTIFACT_NAME" ]; then
+            echo "Successfully downloaded artifact"
+            cd ./artifacts-from-main
+            tar -xzf "$ARTIFACT_NAME"
+            echo "Extracted artifact contents:"
+            ls -la
+            echo "skip_artifact_test=false" >> $GITHUB_ENV
+          fi
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      - name: Restore test dependencies
+        run: dotnet restore ${{ env.TEST_PROJECT_PATH }}
+
+      - name: Build project
+        if: needs.check-changes.outputs.src_changed == 'true' || env.skip_artifact_test == 'true'
+        run: dotnet build ${{ env.PROJECT_PATH }} --configuration Release --no-restore
+
+      - name: Build test project
+        run: dotnet build ${{ env.TEST_PROJECT_PATH }} --configuration Release --no-restore
+
+      - name: Display test context
+        run: |
+          if [ "${{ needs.check-changes.outputs.src_changed }}" == "false" ] && [ "${{ env.skip_artifact_test }}" != "true" ]; then
+            echo "ℹ️  Testing against artifacts from main branch release: ${{ steps.get-release.outputs.tag_name }}"
+            echo "📦 Application code unchanged - using pre-built release artifacts"
+          else
+            echo "ℹ️  Testing against freshly built code from this PR"
+            echo "🔨 Application code changed or no main release available - building from source"
+          fi
+
+      - name: Run tests with coverage
+        run: |
+          dotnet test ${{ env.TEST_PROJECT_PATH }} \
+            --configuration Release \
+            --no-build \
+            --verbosity normal \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./TestResults \
+            --logger "trx;LogFileName=test-results.trx" \
+            --logger "console;verbosity=normal" \
+            --settings coverlet.runsettings
+
+      - name: Generate coverage report
+        run: |
+          # Find the coverage file
+          COVERAGE_FILE=$(find ./TestResults -name "coverage.cobertura.xml" | head -1)
+          if [ -f "$COVERAGE_FILE" ]; then
+            echo "Coverage file found: $COVERAGE_FILE"
+            # Generate HTML report
+            dotnet tool install -g dotnet-reportgenerator-globaltool
+            reportgenerator -reports:"$COVERAGE_FILE" -targetdir:"./CoverageReport" -reporttypes:"Html;Cobertura"
+          else
+            echo "No coverage file found"
+            exit 1
+          fi
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./TestResults/**/coverage.cobertura.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Upload coverage report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            ./CoverageReport/
+            ./TestResults/
+          retention-days: 30
+
+      - name: Parse test results
+        id: test-results
+        run: |
+          # Parse test results from TRX file
+          if [ -f "./TestResults/test-results.trx" ]; then
+            # Extract test counts from TRX file
+            TOTAL_TESTS=$(grep -o 'total="[0-9]*"' ./TestResults/test-results.trx | grep -o '[0-9]*' | head -1)
+            PASSED_TESTS=$(grep -o 'passed="[0-9]*"' ./TestResults/test-results.trx | grep -o '[0-9]*' | head -1)
+            FAILED_TESTS=$(grep -o 'failed="[0-9]*"' ./TestResults/test-results.trx | grep -o '[0-9]*' | head -1)
+            SKIPPED_TESTS=$(grep -o 'skipped="[0-9]*"' ./TestResults/test-results.trx | grep -o '[0-9]*' | head -1)
+
+            echo "total=$TOTAL_TESTS" >> $GITHUB_OUTPUT
+            echo "passed=$PASSED_TESTS" >> $GITHUB_OUTPUT
+            echo "failed=$FAILED_TESTS" >> $GITHUB_OUTPUT
+            echo "skipped=$SKIPPED_TESTS" >> $GITHUB_OUTPUT
+          else
+            echo "total=0" >> $GITHUB_OUTPUT
+            echo "passed=0" >> $GITHUB_OUTPUT
+            echo "failed=0" >> $GITHUB_OUTPUT
+            echo "skipped=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment test results and coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // Get test results from step output
+            const totalTests = '${{ steps.test-results.outputs.total }}';
+            const passedTests = '${{ steps.test-results.outputs.passed }}';
+            const failedTests = '${{ steps.test-results.outputs.failed }}';
+            const skippedTests = '${{ steps.test-results.outputs.skipped }}';
+
+            // Try to find coverage summary
+            const coverageDir = './TestResults';
+            let coverageSummary = '';
+            let lineCoverage = 0;
+            let branchCoverage = 0;
+
+            try {
+              const files = fs.readdirSync(coverageDir, { recursive: true });
+              const coverageFile = files.find(f => f.includes('coverage.cobertura.xml'));
+
+              if (coverageFile) {
+                const coveragePath = path.join(coverageDir, coverageFile);
+                const coverageContent = fs.readFileSync(coveragePath, 'utf8');
+
+                // Extract coverage percentage from XML
+                const lineRateMatch = coverageContent.match(/line-rate="([^"]+)"/);
+                const branchRateMatch = coverageContent.match(/branch-rate="([^"]+)"/);
+
+                if (lineRateMatch && branchRateMatch) {
+                  lineCoverage = Math.round(parseFloat(lineRateMatch[1]) * 100);
+                  branchCoverage = Math.round(parseFloat(branchRateMatch[1]) * 100);
+                }
+              }
+            } catch (error) {
+              console.log('Could not generate coverage summary:', error.message);
+            }
+
+            // Create comprehensive comment
+            const testStatus = failedTests > 0 ? '❌' : '✅';
+            const coverageStatus = lineCoverage >= 80 ? '🟢' : lineCoverage >= 60 ? '🟡' : '🔴';
+            
+            // Determine test context
+            const srcChanged = '${{ needs.check-changes.outputs.src_changed }}' === 'true';
+            const releaseTag = '${{ steps.get-release.outputs.tag_name }}';
+            let testContext = '';
+            
+            if (!srcChanged && releaseTag) {
+              testContext = '> 📦 **Testing Context:** Tests run against artifacts from main branch release `' + releaseTag + '`\n> (Application code unchanged in this PR)\n\n';
+            } else if (!srcChanged) {
+              testContext = '> 🔨 **Testing Context:** Tests run against freshly built code\n> (Application code unchanged, but no main release artifacts available)\n\n';
+            } else {
+              testContext = '> 🔨 **Testing Context:** Tests run against freshly built code from this PR\n\n';
+            }
+
+            const commentBody = `## ${testStatus} Test Results & ${coverageStatus} Code Coverage
+
+            ${testContext}### 🧪 Test Summary
+            | Metric | Count |
+            |--------|-------|
+            | **Total Tests** | ${totalTests} |
+            | **✅ Passed** | ${passedTests} |
+            | **❌ Failed** | ${failedTests} |
+            | **⏭️ Skipped** | ${skippedTests} |
+
+            ### 📊 Coverage Report
+            | Metric | Coverage |
+            |--------|----------|
+            | **Line Coverage** | ${lineCoverage}% |
+            | **Branch Coverage** | ${branchCoverage}% |
+
+            📈 Detailed coverage report is available in the workflow artifacts.
+            🔍 View the [workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId}) for more details.`;
+
+            // Check for existing comments and update or create
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            // Look for existing test/coverage comment
+            const existingComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Test Results') &&
+              comment.body.includes('Code Coverage')
+            );
+
+            if (existingComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+              console.log('Updated existing test results and coverage comment');
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: commentBody
+              });
+              console.log('Created new test results and coverage comment');
+            }
+
+  increment-version:
+    name: Increment Version
+    runs-on: ubuntu-latest
+    needs: [test, check-changes]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && needs.check-changes.outputs.src_changed == 'true'
+    permissions:
+      contents: write
+    outputs:
+      new_version: ${{ steps.new-version.outputs.new_version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get Current Version
+        id: current-version
+        run: |
+          VERSION=$(grep -o '<Version>[^<]*</Version>' ${{ env.PROJECT_PATH }} | sed 's/<Version>//;s/<\/Version>//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+
+      - name: Increment Version
+        id: new-version
+        run: |
+          CURRENT_VERSION="${{ steps.current-version.outputs.version }}"
+          
+          # Parse current version
+          VERSION_PARTS=(${CURRENT_VERSION//./ })
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]%%-*}
+          
+          # Increment patch version
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Update Project File
+        run: |
+          NEW_VERSION="${{ steps.new-version.outputs.new_version }}"
+          
+          # Update the project file
+          sed -i "s/<Version>[^<]*<\/Version>/<Version>$NEW_VERSION<\/Version>/" ${{ env.PROJECT_PATH }}
+          
+          # Update AssemblyVersion, FileVersion, InformationalVersion if present
+          if grep -q '<AssemblyVersion>' ${{ env.PROJECT_PATH }}; then
+            sed -i "s/<AssemblyVersion>[^<]*<\/AssemblyVersion>/<AssemblyVersion>$NEW_VERSION.0<\/AssemblyVersion>/" ${{ env.PROJECT_PATH }}
+          fi
+          if grep -q '<FileVersion>' ${{ env.PROJECT_PATH }}; then
+            sed -i "s/<FileVersion>[^<]*<\/FileVersion>/<FileVersion>$NEW_VERSION.0<\/FileVersion>/" ${{ env.PROJECT_PATH }}
+          fi
+          if grep -q '<InformationalVersion>' ${{ env.PROJECT_PATH }}; then
+            sed -i "s/<InformationalVersion>[^<]*<\/InformationalVersion>/<InformationalVersion>$NEW_VERSION<\/InformationalVersion>/" ${{ env.PROJECT_PATH }}
+          fi
+          
+          echo "Updated project file with version: $NEW_VERSION"
+
+      - name: Commit Version Change
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add ${{ env.PROJECT_PATH }}
+          git commit -m "chore: bump version to ${{ steps.new-version.outputs.new_version }}"
+          git push
+
+  build-windows:
+    name: Build Windows Executables
+    runs-on: windows-latest
+    needs: [test, check-changes, increment-version]
+    if: |
+      always() && 
+      needs.check-changes.outputs.src_changed == 'true' && 
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (needs.increment-version.result == 'success' || needs.increment-version.result == 'skipped')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref || github.head_ref }}
+          fetch-depth: 0
+
+      # For push events, we need to pull the latest changes that include the version bump
+      # For PR events, we just use the PR branch as-is
+      - name: Pull latest changes (includes version bump for push events)
+        if: github.event_name == 'push'
+        run: git pull --rebase origin ${{ github.ref_name }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      - name: Build Windows x64
+        run: |
+          dotnet publish ${{ env.PROJECT_PATH }} -r win-x64 -c Release --self-contained -p:PublishSingleFile=true -o ./dist/windows-x64
+
+      - name: Build Windows ARM64
+        run: |
+          dotnet publish ${{ env.PROJECT_PATH }} -r win-arm64 -c Release --self-contained -p:PublishSingleFile=true -o ./dist/windows-arm64
+
+      - name: Create Windows x64 Archive
+        run: |
+          Compress-Archive -Path ./dist/windows-x64/* -DestinationPath ./dist/MSSQLDBSink-windows-x64.zip
+
+      - name: Create Windows ARM64 Archive
+        run: |
+          Compress-Archive -Path ./dist/windows-arm64/* -DestinationPath ./dist/MSSQLDBSink-windows-arm64.zip
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-executables
+          path: ./dist/MSSQLDBSink-windows-*.zip
+
+  build-macos:
+    name: Build macOS Executables
+    runs-on: macos-latest
+    needs: [test, check-changes, increment-version]
+    if: |
+      always() && 
+      needs.check-changes.outputs.src_changed == 'true' && 
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (needs.increment-version.result == 'success' || needs.increment-version.result == 'skipped')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref || github.head_ref }}
+          fetch-depth: 0
+
+      # For push events, we need to pull the latest changes that include the version bump
+      # For PR events, we just use the PR branch as-is
+      - name: Pull latest changes (includes version bump for push events)
+        if: github.event_name == 'push'
+        run: git pull --rebase origin ${{ github.ref_name }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      - name: Build macOS ARM64
+        run: |
+          dotnet publish ${{ env.PROJECT_PATH }} -r osx-arm64 -c Release --self-contained -p:PublishSingleFile=true -o ./dist/macos-arm64
+
+      - name: Create macOS ARM64 Archive
+        run: |
+          cd ./dist/macos-arm64
+          zip -r ../MSSQLDBSink-macos-arm64.zip ./*
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-executables
+          path: ./dist/MSSQLDBSink-macos-*.zip
+
+  build-linux:
+    name: Build Linux Executables
+    runs-on: ubuntu-latest
+    needs: [test, check-changes, increment-version]
+    if: |
+      always() && 
+      needs.check-changes.outputs.src_changed == 'true' && 
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (needs.increment-version.result == 'success' || needs.increment-version.result == 'skipped')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref || github.head_ref }}
+          fetch-depth: 0
+
+      # For push events, we need to pull the latest changes that include the version bump
+      # For PR events, we just use the PR branch as-is
+      - name: Pull latest changes (includes version bump for push events)
+        if: github.event_name == 'push'
+        run: git pull --rebase origin ${{ github.ref_name }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      - name: Build Linux x64
+        run: |
+          dotnet publish ${{ env.PROJECT_PATH }} -r linux-x64 -c Release --self-contained -p:PublishSingleFile=true -o ./dist/linux-x64
+
+      - name: Build Linux ARM64
+        run: |
+          dotnet publish ${{ env.PROJECT_PATH }} -r linux-arm64 -c Release --self-contained -p:PublishSingleFile=true -o ./dist/linux-arm64
+
+      - name: Create Linux x64 Archive
+        run: |
+          cd ./dist/linux-x64
+          tar -czf ../MSSQLDBSink-linux-x64.tar.gz ./*
+
+      - name: Create Linux ARM64 Archive
+        run: |
+          cd ./dist/linux-arm64
+          tar -czf ../MSSQLDBSink-linux-arm64.tar.gz ./*
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-executables
+          path: ./dist/MSSQLDBSink-linux-*.tar.gz
+
+  create-prerelease:
+    name: Create Pre-release
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-macos, build-linux, check-changes]
+    if: github.event_name == 'pull_request' && needs.check-changes.outputs.src_changed == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-executables
+          path: ./artifacts/windows
+
+      - name: Download macOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-executables
+          path: ./artifacts/macos
+
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-executables
+          path: ./artifacts/linux
+
+      - name: Get PR Number
+        id: pr
+        run: echo "number=${{ github.event.number }}" >> $GITHUB_OUTPUT
+
+      - name: Get Version
+        id: version
+        run: |
+          # Extract version from project file
+          VERSION=$(grep -o '<Version>[^<]*</Version>' ${{ env.PROJECT_PATH }} | sed 's/<Version>//;s/<\/Version>//')
+
+          # Validate version format (semantic versioning)
+          if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
+            echo "❌ Invalid version format: $VERSION"
+            echo "Expected format: MAJOR.MINOR.PATCH[-PRERELEASE]"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Extracted version: $VERSION"
+
+          # Extract version components for validation
+          VERSION_PARTS=(${VERSION//./ })
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]%%-*}
+
+          echo "major=$MAJOR" >> $GITHUB_OUTPUT
+          echo "minor=$MINOR" >> $GITHUB_OUTPUT
+          echo "patch=$PATCH" >> $GITHUB_OUTPUT
+
+          # Check if it's a prerelease version
+          if [[ $VERSION == *"-"* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "🔶 Prerelease version detected"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "🔷 Release version detected"
+          fi
+
+      - name: Validate Version for Pre-release
+        run: |
+          # For pre-releases, we expect the version to be a prerelease version
+          if [[ "${{ steps.version.outputs.is_prerelease }}" == "false" ]]; then
+            echo "⚠️  Warning: Creating pre-release with non-prerelease version ${{ steps.version.outputs.version }}"
+            echo "Consider using a prerelease version like ${{ steps.version.outputs.version }}-beta.1"
+          fi
+
+      - name: Rename artifacts with version
+        run: |
+          # Rename Windows artifacts
+          mv ./artifacts/windows/MSSQLDBSink-windows-x64.zip ./artifacts/windows/MSSQLDBSink-windows-x64-${{ steps.version.outputs.version }}.zip
+          mv ./artifacts/windows/MSSQLDBSink-windows-arm64.zip ./artifacts/windows/MSSQLDBSink-windows-arm64-${{ steps.version.outputs.version }}.zip
+
+          # Rename macOS artifacts
+          mv ./artifacts/macos/MSSQLDBSink-macos-arm64.zip ./artifacts/macos/MSSQLDBSink-macos-arm64-${{ steps.version.outputs.version }}.zip
+
+          # Rename Linux artifacts
+          mv ./artifacts/linux/MSSQLDBSink-linux-x64.tar.gz ./artifacts/linux/MSSQLDBSink-linux-x64-${{ steps.version.outputs.version }}.tar.gz
+          mv ./artifacts/linux/MSSQLDBSink-linux-arm64.tar.gz ./artifacts/linux/MSSQLDBSink-linux-arm64-${{ steps.version.outputs.version }}.tar.gz
+
+      - name: Create Pre-release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}-pr${{ steps.pr.outputs.number }}
+          name: v${{ steps.version.outputs.version }} Pre-release (PR #${{ github.event.number }})
+          body: |
+            This is a pre-release build for PR #${{ github.event.number }}.
+
+            **Download the appropriate file for your platform:**
+            - **Windows x64**: `MSSQLDBSink-windows-x64-${{ steps.version.outputs.version }}.zip`
+            - **Windows ARM64**: `MSSQLDBSink-windows-arm64-${{ steps.version.outputs.version }}.zip`
+            - **macOS ARM64 (Apple Silicon)**: `MSSQLDBSink-macos-arm64-${{ steps.version.outputs.version }}.zip`
+            - **Linux x64**: `MSSQLDBSink-linux-x64-${{ steps.version.outputs.version }}.tar.gz`
+            - **Linux ARM64**: `MSSQLDBSink-linux-arm64-${{ steps.version.outputs.version }}.tar.gz`
+
+            **Installation:**
+            1. Download the appropriate file for your platform
+            2. Extract the archive
+            3. Run the executable: `./MSSQLDBSink` (Linux/macOS) or `MSSQLDBSink.exe` (Windows)
+          files: |
+            ./artifacts/windows/MSSQLDBSink-windows-x64-${{ steps.version.outputs.version }}.zip
+            ./artifacts/windows/MSSQLDBSink-windows-arm64-${{ steps.version.outputs.version }}.zip
+            ./artifacts/macos/MSSQLDBSink-macos-arm64-${{ steps.version.outputs.version }}.zip
+            ./artifacts/linux/MSSQLDBSink-linux-x64-${{ steps.version.outputs.version }}.tar.gz
+            ./artifacts/linux/MSSQLDBSink-linux-arm64-${{ steps.version.outputs.version }}.tar.gz
+          prerelease: true
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-macos, build-linux]
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-executables
+          path: ./artifacts/windows
+
+      - name: Download macOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-executables
+          path: ./artifacts/macos
+
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-executables
+          path: ./artifacts/linux
+
+      - name: Get Version
+        id: version
+        run: |
+          # Extract version from project file
+          VERSION=$(grep -o '<Version>[^<]*</Version>' ${{ env.PROJECT_PATH }} | sed 's/<Version>//;s/<\/Version>//')
+
+          # Validate version format (semantic versioning)
+          if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
+            echo "❌ Invalid version format: $VERSION"
+            echo "Expected format: MAJOR.MINOR.PATCH[-PRERELEASE]"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Extracted version: $VERSION"
+
+          # Extract version components for validation
+          VERSION_PARTS=(${VERSION//./ })
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]%%-*}
+
+          echo "major=$MAJOR" >> $GITHUB_OUTPUT
+          echo "minor=$MINOR" >> $GITHUB_OUTPUT
+          echo "patch=$PATCH" >> $GITHUB_OUTPUT
+
+          # Check if it's a prerelease version
+          if [[ $VERSION == *"-"* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "🔶 Prerelease version detected"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "🔷 Release version detected"
+          fi
+
+      - name: Validate Version for Release
+        run: |
+          # For releases, we expect the version to NOT be a prerelease version
+          if [[ "${{ steps.version.outputs.is_prerelease }}" == "true" ]]; then
+            echo "❌ Error: Cannot create release with prerelease version ${{ steps.version.outputs.version }}"
+            echo "Please use a release version like ${{ steps.version.outputs.major }}.${{ steps.version.outputs.minor }}.${{ steps.version.outputs.patch }}"
+            exit 1
+          fi
+
+          # Validate that the tag matches the version
+          EXPECTED_TAG="v${{ steps.version.outputs.version }}"
+          ACTUAL_TAG="${{ github.event.release.tag_name }}"
+
+          if [[ "$ACTUAL_TAG" != "$EXPECTED_TAG" ]]; then
+            echo "❌ Error: Tag mismatch"
+            echo "Expected tag: $EXPECTED_TAG"
+            echo "Actual tag: $ACTUAL_TAG"
+            echo "Please ensure the release tag matches the version in the project file"
+            exit 1
+          fi
+
+          echo "✅ Version validation passed"
+
+      - name: Rename artifacts with version
+        run: |
+          # Rename Windows artifacts
+          mv ./artifacts/windows/MSSQLDBSink-windows-x64.zip ./artifacts/windows/MSSQLDBSink-windows-x64-${{ steps.version.outputs.version }}.zip
+          mv ./artifacts/windows/MSSQLDBSink-windows-arm64.zip ./artifacts/windows/MSSQLDBSink-windows-arm64-${{ steps.version.outputs.version }}.zip
+
+          # Rename macOS artifacts
+          mv ./artifacts/macos/MSSQLDBSink-macos-arm64.zip ./artifacts/macos/MSSQLDBSink-macos-arm64-${{ steps.version.outputs.version }}.zip
+
+          # Rename Linux artifacts
+          mv ./artifacts/linux/MSSQLDBSink-linux-x64.tar.gz ./artifacts/linux/MSSQLDBSink-linux-x64-${{ steps.version.outputs.version }}.tar.gz
+          mv ./artifacts/linux/MSSQLDBSink-linux-arm64.tar.gz ./artifacts/linux/MSSQLDBSink-linux-arm64-${{ steps.version.outputs.version }}.tar.gz
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: |
+            ./artifacts/windows/MSSQLDBSink-windows-x64-${{ steps.version.outputs.version }}.zip
+            ./artifacts/windows/MSSQLDBSink-windows-arm64-${{ steps.version.outputs.version }}.zip
+            ./artifacts/macos/MSSQLDBSink-macos-arm64-${{ steps.version.outputs.version }}.zip
+            ./artifacts/linux/MSSQLDBSink-linux-x64-${{ steps.version.outputs.version }}.tar.gz
+            ./artifacts/linux/MSSQLDBSink-linux-arm64-${{ steps.version.outputs.version }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup-and-release:
+    name: Cleanup Pre-releases and Create Release
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-macos, build-linux, increment-version]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      # Pull the latest changes that include the version bump from increment-version job
+      - name: Pull latest changes
+        run: git pull --rebase origin ${{ github.ref_name }}
+
+      - name: Delete Pre-releases
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+
+            const prereleases = releases.filter(release => release.prerelease);
+
+            for (const release of prereleases) {
+              console.log(`Deleting pre-release: ${release.tag_name}`);
+              await github.rest.repos.deleteRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id
+              });
+
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${release.tag_name}`
+              });
+            }
+
+            console.log(`Deleted ${prereleases.length} pre-releases`);
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-executables
+          path: ./artifacts/windows
+
+      - name: Download macOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-executables
+          path: ./artifacts/macos
+
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-executables
+          path: ./artifacts/linux
+
+      - name: Rename artifacts with version
+        run: |
+          NEW_VERSION="${{ needs.increment-version.outputs.new_version }}"
+          # Rename Windows artifacts
+          mv ./artifacts/windows/MSSQLDBSink-windows-x64.zip ./artifacts/windows/MSSQLDBSink-windows-x64-$NEW_VERSION.zip
+          mv ./artifacts/windows/MSSQLDBSink-windows-arm64.zip ./artifacts/windows/MSSQLDBSink-windows-arm64-$NEW_VERSION.zip
+          
+          # Rename macOS artifacts
+          mv ./artifacts/macos/MSSQLDBSink-macos-arm64.zip ./artifacts/macos/MSSQLDBSink-macos-arm64-$NEW_VERSION.zip
+          
+          # Rename Linux artifacts
+          mv ./artifacts/linux/MSSQLDBSink-linux-x64.tar.gz ./artifacts/linux/MSSQLDBSink-linux-x64-$NEW_VERSION.tar.gz
+          mv ./artifacts/linux/MSSQLDBSink-linux-arm64.tar.gz ./artifacts/linux/MSSQLDBSink-linux-arm64-$NEW_VERSION.tar.gz
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.increment-version.outputs.new_version }}
+          name: v${{ needs.increment-version.outputs.new_version }}
+          body: |
+            ## Release v${{ needs.increment-version.outputs.new_version }}
+            
+            This release was automatically created from the merge to main.
+            
+            **Download the appropriate file for your platform:**
+            - **Windows x64**: `MSSQLDBSink-windows-x64-${{ needs.increment-version.outputs.new_version }}.zip`
+            - **Windows ARM64**: `MSSQLDBSink-windows-arm64-${{ needs.increment-version.outputs.new_version }}.zip`
+            - **macOS ARM64 (Apple Silicon)**: `MSSQLDBSink-macos-arm64-${{ needs.increment-version.outputs.new_version }}.zip`
+            - **Linux x64**: `MSSQLDBSink-linux-x64-${{ needs.increment-version.outputs.new_version }}.tar.gz`
+            - **Linux ARM64**: `MSSQLDBSink-linux-arm64-${{ needs.increment-version.outputs.new_version }}.tar.gz`
+            
+            **Installation:**
+            1. Download the appropriate file for your platform
+            2. Extract the archive
+            3. Run the executable: `./MSSQLDBSink` (Linux/macOS) or `MSSQLDBSink.exe` (Windows)
+          files: |
+            ./artifacts/windows/MSSQLDBSink-windows-x64-${{ needs.increment-version.outputs.new_version }}.zip
+            ./artifacts/windows/MSSQLDBSink-windows-arm64-${{ needs.increment-version.outputs.new_version }}.zip
+            ./artifacts/macos/MSSQLDBSink-macos-arm64-${{ needs.increment-version.outputs.new_version }}.zip
+            ./artifacts/linux/MSSQLDBSink-linux-x64-${{ needs.increment-version.outputs.new_version }}.tar.gz
+            ./artifacts/linux/MSSQLDBSink-linux-arm64-${{ needs.increment-version.outputs.new_version }}.tar.gz
+          prerelease: false
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
