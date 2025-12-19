@@ -103,18 +103,54 @@ jobs:
         with:
           ref: ${{ needs.versioning.outputs.tag_name }}
 
+      - name: Create Release
+        id: create-release
+        uses: im-open/create-release@v3.2.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          tag-name: ${{ needs.versioning.outputs.tag_name }}
+          release-name: Release ${{ needs.versioning.outputs.tag_name }}
+          commitish: ${{ needs.versioning.outputs.tag_name }}
+          generate-release-notes: true
+
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Upload win-x64 artifact
+        uses: im-open/upload-release-asset@v1.1.4
         with:
-          tag_name: ${{ needs.versioning.outputs.tag_name }}
-          name: Release ${{ needs.versioning.outputs.tag_name }}
-          generate_release_notes: true
-          files: |
-            artifacts/*.zip
-            artifacts/*.tar.gz
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          upload-url: ${{ steps.create-release.outputs.asset-upload-url }}
+          asset-path: artifacts/MSSQLDBSink-win-x64.zip
+          asset-name: MSSQLDBSink-win-x64.zip
+          asset-content-type: application/zip
+
+      - name: Upload win-arm64 artifact
+        uses: im-open/upload-release-asset@v1.1.4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          upload-url: ${{ steps.create-release.outputs.asset-upload-url }}
+          asset-path: artifacts/MSSQLDBSink-win-arm64.zip
+          asset-name: MSSQLDBSink-win-arm64.zip
+          asset-content-type: application/zip
+
+      - name: Upload linux-x64 artifact
+        uses: im-open/upload-release-asset@v1.1.4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          upload-url: ${{ steps.create-release.outputs.asset-upload-url }}
+          asset-path: artifacts/MSSQLDBSink-linux-x64.tar.gz
+          asset-name: MSSQLDBSink-linux-x64.tar.gz
+          asset-content-type: application/gzip
+
+      - name: Upload osx-arm64 artifact
+        uses: im-open/upload-release-asset@v1.1.4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          upload-url: ${{ steps.create-release.outputs.asset-upload-url }}
+          asset-path: artifacts/MSSQLDBSink-osx-arm64.tar.gz
+          asset-name: MSSQLDBSink-osx-arm64.tar.gz
+          asset-content-type: application/gzip
