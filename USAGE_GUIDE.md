@@ -1,4 +1,4 @@
-# Usage Guide - SQL Server Sink
+# Usage Guide - MSSQLDBSink
 
 ## 📖 Table of Contents
 1. [Quick Start](#quick-start)
@@ -14,7 +14,7 @@
 
 ### Step 1: Build the Application
 ```bash
-cd SQLServerSink
+cd MSSQLDBSink
 dotnet build
 ```
 
@@ -30,7 +30,7 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
 
 ### Basic Syntax
 ```bash
-SQLServerSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
+MSSQLDBSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
 ```
 
 ### Arguments
@@ -351,9 +351,9 @@ Solutions:
 ## Example Session
 
 ```
-PS C:\SQLServerSink> dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
+PS C:\MSSQLDBSink> dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
 
-SQL Server Sink - Database Record Sync Tool
+MS SQL DB Sink - Database Record Sync Tool
 ===========================================
 
 Source: source.database.windows.net (SourceDB)

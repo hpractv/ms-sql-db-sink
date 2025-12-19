@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using SQLServerSink;
+using MSSQLDBSink;
 using FluentAssertions.Specialized;
 
-namespace SQLServerSink.Tests;
+namespace MSSQLDBSink.Tests;
 
 public class DatabaseSyncServiceIntegrationTests
 {

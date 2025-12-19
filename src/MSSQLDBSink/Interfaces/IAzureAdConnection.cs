@@ -1,4 +1,4 @@
-namespace SQLServerSink.Interfaces;
+namespace MSSQLDBSink.Interfaces;
 
 /// <summary>
 /// Interface for Azure AD connection string generation.

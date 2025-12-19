@@ -1,14 +1,14 @@
-# SQL Server Sink - Project Summary
+# MSSQLDBSink - Project Summary
 
 ## 📁 Project Structure
 
 ```
-SQLServerSink/
+MSSQLDBSink/
 ├── Program.cs                      # Main entry point and CLI argument handling
 ├── DatabaseSyncService.cs          # Core sync logic and database operations
 ├── AzureAdConnection.cs            # Azure AD Interactive connection logic
 ├── SyncRunResult.cs                # Result models for JSON reporting
-├── SQLServerSink.csproj            # Project file with dependencies
+├── MSSQLDBSink.csproj            # Project file with dependencies
 ├── README.md                       # Comprehensive documentation
 ├── .gitignore                      # Git ignore file
 ├── run-sync.bat                    # Windows batch script for easy execution
@@ -20,7 +20,7 @@ SQLServerSink/
 
 ### 1. Build the Project
 ```bash
-cd SQLServerSink
+cd MSSQLDBSink
 dotnet build
 ```
 
@@ -154,7 +154,7 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
 ## 📊 Example Output
 
 ```
-SQL Server Sink - Database Record Sync Tool
+MS SQL DB Sink - Database Record Sync Tool
 ===========================================
 
 Source: source.database.windows.net (SourceDB)
@@ -221,7 +221,7 @@ Results saved to: results/sync-result-20251211_143022.json
 
 ## 📝 License
 
-This project is licensed under the GNU General Public License v3.0.
+This project is licensed under a custom license. It is free for non-commercial use but cannot be included in other projects or redistributed.
 
 ## 🤝 Contributing
 

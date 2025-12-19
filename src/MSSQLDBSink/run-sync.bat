@@ -2,7 +2,7 @@
 REM Quick Start Script for SQL Server Sink
 REM Usage: run-sync.bat
 
-echo SQL Server Sink - Database Record Sync Tool
+echo MS SQL DB Sink - Database Record Sync Tool
 echo ============================================
 echo.
 

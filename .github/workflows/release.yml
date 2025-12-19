@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            archive_name: MSSQLDBSink-win-x64
+          - os: windows-latest
+            rid: win-arm64
+            archive_name: MSSQLDBSink-win-arm64
+          - os: ubuntu-latest
+            rid: linux-x64
+            archive_name: MSSQLDBSink-linux-x64
+          - os: macos-latest
+            rid: osx-arm64
+            archive_name: MSSQLDBSink-osx-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Publish
+      run: dotnet publish src/MSSQLDBSink/MSSQLDBSink.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -o release/${{ matrix.archive_name }}
+
+    - name: Archive artifacts (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        Compress-Archive -Path release/${{ matrix.archive_name }}/* -DestinationPath release/${{ matrix.archive_name }}.zip
+
+    - name: Archive artifacts (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        cd release/${{ matrix.archive_name }}
+        tar -czvf ../${{ matrix.archive_name }}.tar.gz *
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.archive_name }}
+        path: |
+          release/*.zip
+          release/*.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+             artifacts/**/*.zip
+             artifacts/**/*.tar.gz

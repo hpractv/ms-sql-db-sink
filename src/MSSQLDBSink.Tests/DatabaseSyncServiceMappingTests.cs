@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using SQLServerSink;
+using MSSQLDBSink;
 
-namespace SQLServerSink.Tests;
+namespace MSSQLDBSink.Tests;
 
 public class DatabaseSyncServiceMappingTests
 {
