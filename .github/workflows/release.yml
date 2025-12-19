@@ -75,7 +75,7 @@ jobs:
           echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
           echo "tag_name=v$NEXT_VERSION" >> $GITHUB_OUTPUT
 
-  build:
+  build-and-release:
     needs: versioning
     runs-on: ubuntu-latest
     strategy:
@@ -101,7 +101,6 @@ jobs:
 
       - name: Publish
         run: dotnet publish src/MSSQLDBSink/MSSQLDBSink.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -o release/${{ matrix.archive_name }}
-        # Note: We don't need to pass /p:Version because it is now in the csproj file we checked out!
 
       - name: Archive artifacts
         run: |
@@ -120,8 +119,8 @@ jobs:
             *.zip
             *.tar.gz
 
-  release:
-    needs: [versioning, build]
+  create-release:
+    needs: [versioning, build-and-release]
     runs-on: ubuntu-latest
     permissions:
       contents: write
