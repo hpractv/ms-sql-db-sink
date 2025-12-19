@@ -12,68 +12,42 @@ jobs:
   versioning:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.calc.outputs.version }}
-      tag_name: ${{ steps.calc.outputs.tag_name }}
+      version: ${{ steps.gitversion.outputs.NEXT_VERSION_NO_PREFIX }}
+      tag_name: ${{ steps.gitversion.outputs.NEXT_VERSION }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Calculate and Update Version
-        id: calc
+      - name: Calculate Next Version
+        id: gitversion
+        uses: im-open/git-version-lite@v3.2.0
+        with:
+          tag-prefix: v
+          default-release-type: patch
+
+      - name: Update Version and Create Tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git fetch --tags
-          LATEST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "v0.0.0")
+          NEXT_VERSION="${{ steps.gitversion.outputs.NEXT_VERSION_NO_PREFIX }}"
+          TAG_NAME="${{ steps.gitversion.outputs.NEXT_VERSION }}"
 
-          if [ "$LATEST_TAG" == "v0.0.0" ]; then
-             LOGS=$(git log --pretty=format:"%s")
-          else
-             LOGS=$(git log $LATEST_TAG..HEAD --pretty=format:"%s")
-          fi
-
-          INCREMENT="patch"
-          if echo "$LOGS" | grep -qEi "(\+semver:\s*major|#major)"; then
-            INCREMENT="major"
-          elif echo "$LOGS" | grep -qEi "(\+semver:\s*minor|#minor)"; then
-            INCREMENT="minor"
-          fi
-
-          VERSION=${LATEST_TAG#v}
-          IFS='.' read -r -a PARTS <<< "$VERSION"
-          MAJOR=${PARTS[0]}
-          MINOR=${PARTS[1]}
-          PATCH=${PARTS[2]}
-
-          if [ "$INCREMENT" == "major" ]; then
-            MAJOR=$((MAJOR + 1))
-            MINOR=0
-            PATCH=0
-          elif [ "$INCREMENT" == "minor" ]; then
-            MINOR=$((MINOR + 1))
-            PATCH=0
-          else
-            PATCH=$((PATCH + 1))
-          fi
-
-          NEXT_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "Next Version: $NEXT_VERSION"
+          echo "Tag Name: $TAG_NAME"
 
           # Update csproj
           sed -i "s|<Version>.*</Version>|<Version>$NEXT_VERSION</Version>|" src/MSSQLDBSink/MSSQLDBSink.csproj
 
           git add src/MSSQLDBSink/MSSQLDBSink.csproj
           git commit -m "Bump version to $NEXT_VERSION [skip ci]"
-          git tag "v$NEXT_VERSION"
+          git tag "$TAG_NAME"
 
           # Push changes
           git push origin main
-          git push origin "v$NEXT_VERSION"
-
-          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
-          echo "tag_name=v$NEXT_VERSION" >> $GITHUB_OUTPUT
+          git push origin "$TAG_NAME"
 
   build-and-release:
     needs: versioning
