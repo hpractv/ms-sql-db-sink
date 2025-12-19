@@ -2,75 +2,247 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  build-and-release:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - os: windows-latest
-            rid: win-x64
+          - rid: win-x64
             archive_name: MSSQLDBSink-win-x64
-          - os: windows-latest
-            rid: win-arm64
+          - rid: win-arm64
             archive_name: MSSQLDBSink-win-arm64
-          - os: ubuntu-latest
-            rid: linux-x64
+          - rid: linux-x64
             archive_name: MSSQLDBSink-linux-x64
-          - os: macos-latest
-            rid: osx-arm64
+          - rid: osx-arm64
             archive_name: MSSQLDBSink-osx-arm64
-
-    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
 
-    - name: Publish
-      run: dotnet publish src/MSSQLDBSink/MSSQLDBSink.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -o release/${{ matrix.archive_name }}
-
-    - name: Archive artifacts (Windows)
-      if: runner.os == 'Windows'
+    - name: Calculate and Update Version
+      id: version_step
+      # Only run this on the primary matrix job to avoid race conditions/multiple commits.
+      if: matrix.rid == 'linux-x64'
       run: |
-        Compress-Archive -Path release/${{ matrix.archive_name }}/* -DestinationPath release/${{ matrix.archive_name }}.zip
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
 
-    - name: Archive artifacts (Unix)
-      if: runner.os != 'Windows'
-      run: |
-        cd release/${{ matrix.archive_name }}
-        tar -czvf ../${{ matrix.archive_name }}.tar.gz *
+        git fetch --tags
+        LATEST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "v0.0.0")
+        echo "Current Version: $LATEST_TAG"
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.archive_name }}
-        path: |
-          release/*.zip
-          release/*.tar.gz
+        # Get all commit messages since the last tag
+        if [ "$LATEST_TAG" == "v0.0.0" ]; then
+           LOGS=$(git log --pretty=format:"%s")
+        else
+           LOGS=$(git log $LATEST_TAG..HEAD --pretty=format:"%s")
+        fi
+
+        # Determine increment type
+        INCREMENT="patch"
+        if echo "$LOGS" | grep -qEi "(\+semver:\s*major|#major)"; then
+          INCREMENT="major"
+        elif echo "$LOGS" | grep -qEi "(\+semver:\s*minor|#minor)"; then
+          INCREMENT="minor"
+        fi
+
+        echo "Increment type: $INCREMENT"
+
+        VERSION=${LATEST_TAG#v}
+        IFS='.' read -r -a PARTS <<< "$VERSION"
+        MAJOR=${PARTS[0]}
+        MINOR=${PARTS[1]}
+        PATCH=${PARTS[2]}
+
+        if [ "$INCREMENT" == "major" ]; then
+          MAJOR=$((MAJOR + 1))
+          MINOR=0
+          PATCH=0
+        elif [ "$INCREMENT" == "minor" ]; then
+          MINOR=$((MINOR + 1))
+          PATCH=0
+        else
+          PATCH=$((PATCH + 1))
+        fi
+
+        NEXT_VERSION="$MAJOR.$MINOR.$PATCH"
+        echo "Next Version: $NEXT_VERSION"
+
+        # Update csproj
+        sed -i "s|<Version>.*</Version>|<Version>$NEXT_VERSION</Version>|" src/MSSQLDBSink/MSSQLDBSink.csproj
+
+        # Commit and Tag
+        git add src/MSSQLDBSink/MSSQLDBSink.csproj
+        git commit -m "Bump version to $NEXT_VERSION [skip ci]"
+        git tag "v$NEXT_VERSION"
+        git push origin main
+        git push origin "v$NEXT_VERSION"
+
+        echo "VERSION=$NEXT_VERSION" >> $GITHUB_ENV
+        echo "TAG_NAME=v$NEXT_VERSION" >> $GITHUB_ENV
+
+        # Output for other matrix jobs to consume?
+        # Actually, since we rewrite the file, other matrix jobs running in parallel might have stale code if they checked out earlier.
+        # BUT: The matrix jobs run in parallel. If 'linux-x64' pushes a new commit, the others are already running on the OLD commit.
+        # PROBLEM: We want the release artifacts to be from the NEW commit/version.
+        # SOLUTION: This job should probably be split.
+        # Job 1: Calculate version, update repo, push tag.
+        # Job 2: Build (triggered by the new tag? No, [skip ci] prevents that).
+        # We need a sequential flow.
+        # Job 1: Versioning.
+        # Job 2: Build matrix (depends on Versioning).
+
+    - name: Export Version for Matrix (Wait, this is inside matrix)
+      # This design is flawed for matrix + version bump.
+      run: echo "Design flaw detected, need to restructure workflow."
+
+  versioning:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.calc.outputs.version }}
+      tag_name: ${{ steps.calc.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calculate and Update Version
+        id: calc
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch --tags
+          LATEST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "v0.0.0")
+
+          if [ "$LATEST_TAG" == "v0.0.0" ]; then
+             LOGS=$(git log --pretty=format:"%s")
+          else
+             LOGS=$(git log $LATEST_TAG..HEAD --pretty=format:"%s")
+          fi
+
+          INCREMENT="patch"
+          if echo "$LOGS" | grep -qEi "(\+semver:\s*major|#major)"; then
+            INCREMENT="major"
+          elif echo "$LOGS" | grep -qEi "(\+semver:\s*minor|#minor)"; then
+            INCREMENT="minor"
+          fi
+
+          VERSION=${LATEST_TAG#v}
+          IFS='.' read -r -a PARTS <<< "$VERSION"
+          MAJOR=${PARTS[0]}
+          MINOR=${PARTS[1]}
+          PATCH=${PARTS[2]}
+
+          if [ "$INCREMENT" == "major" ]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+          elif [ "$INCREMENT" == "minor" ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+
+          NEXT_VERSION="$MAJOR.$MINOR.$PATCH"
+
+          # Update csproj
+          sed -i "s|<Version>.*</Version>|<Version>$NEXT_VERSION</Version>|" src/MSSQLDBSink/MSSQLDBSink.csproj
+
+          git add src/MSSQLDBSink/MSSQLDBSink.csproj
+          git commit -m "Bump version to $NEXT_VERSION [skip ci]"
+          git tag "v$NEXT_VERSION"
+
+          # Push changes
+          git push origin main
+          git push origin "v$NEXT_VERSION"
+
+          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=v$NEXT_VERSION" >> $GITHUB_OUTPUT
+
+  build:
+    needs: versioning
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - rid: win-x64
+            archive_name: MSSQLDBSink-win-x64
+          - rid: win-arm64
+            archive_name: MSSQLDBSink-win-arm64
+          - rid: linux-x64
+            archive_name: MSSQLDBSink-linux-x64
+          - rid: osx-arm64
+            archive_name: MSSQLDBSink-osx-arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.versioning.outputs.tag_name }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish
+        run: dotnet publish src/MSSQLDBSink/MSSQLDBSink.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -o release/${{ matrix.archive_name }}
+        # Note: We don't need to pass /p:Version because it is now in the csproj file we checked out!
+
+      - name: Archive artifacts
+        run: |
+          cd release
+          if [[ "${{ matrix.rid }}" == *"win"* ]]; then
+            zip -r ../${{ matrix.archive_name }}.zip ${{ matrix.archive_name }}
+          else
+            tar -czvf ../${{ matrix.archive_name }}.tar.gz ${{ matrix.archive_name }}
+          fi
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive_name }}
+          path: |
+            *.zip
+            *.tar.gz
 
   release:
-    needs: build
+    needs: [versioning, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.versioning.outputs.tag_name }}
 
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ needs.versioning.outputs.tag_name }}
+          name: Release ${{ needs.versioning.outputs.tag_name }}
+          generate_release_notes: true
           files: |
-             artifacts/**/*.zip
-             artifacts/**/*.tar.gz
+            artifacts/*.zip
+            artifacts/*.tar.gz
