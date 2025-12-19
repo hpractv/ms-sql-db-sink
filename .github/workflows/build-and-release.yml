@@ -71,13 +71,13 @@ jobs:
               repo: context.repo.repo,
               per_page: 100
             });
-            
+
             // Find the latest non-prerelease from main branch
-            const mainRelease = releases.find(release => 
-              !release.prerelease && 
+            const mainRelease = releases.find(release =>
+              !release.prerelease &&
               !release.tag_name.includes('-pr')
             );
-            
+
             if (mainRelease) {
               console.log(`Found latest main release: ${mainRelease.tag_name}`);
               core.setOutput('tag_name', mainRelease.tag_name);
@@ -95,11 +95,11 @@ jobs:
         run: |
           TAG_NAME="${{ steps.get-release.outputs.tag_name }}"
           echo "Downloading artifacts from release: $TAG_NAME"
-          
+
           # Download the Linux x64 artifact for testing
           ARTIFACT_NAME="MSSQLDBSink-linux-x64-${TAG_NAME#v}.tar.gz"
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/$TAG_NAME/$ARTIFACT_NAME"
-          
+
           echo "Downloading from: $DOWNLOAD_URL"
           mkdir -p ./artifacts-from-main
           curl -L -o "./artifacts-from-main/$ARTIFACT_NAME" "$DOWNLOAD_URL" || {
@@ -107,7 +107,7 @@ jobs:
             echo "Will build from source instead"
             echo "skip_artifact_test=true" >> $GITHUB_ENV
           }
-          
+
           if [ -f "./artifacts-from-main/$ARTIFACT_NAME" ]; then
             echo "Successfully downloaded artifact"
             cd ./artifacts-from-main
@@ -250,12 +250,12 @@ jobs:
             // Create comprehensive comment
             const testStatus = failedTests > 0 ? '❌' : '✅';
             const coverageStatus = lineCoverage >= 80 ? '🟢' : lineCoverage >= 60 ? '🟡' : '🔴';
-            
+
             // Determine test context
             const srcChanged = '${{ needs.check-changes.outputs.src_changed }}' === 'true';
             const releaseTag = '${{ steps.get-release.outputs.tag_name }}';
             let testContext = '';
-            
+
             if (!srcChanged && releaseTag) {
               testContext = '> 📦 **Testing Context:** Tests run against artifacts from main branch release `' + releaseTag + '`\n> (Application code unchanged in this PR)\n\n';
             } else if (!srcChanged) {
@@ -344,27 +344,27 @@ jobs:
         id: new-version
         run: |
           CURRENT_VERSION="${{ steps.current-version.outputs.version }}"
-          
+
           # Parse current version
           VERSION_PARTS=(${CURRENT_VERSION//./ })
           MAJOR=${VERSION_PARTS[0]}
           MINOR=${VERSION_PARTS[1]}
           PATCH=${VERSION_PARTS[2]%%-*}
-          
+
           # Increment patch version
           NEW_PATCH=$((PATCH + 1))
           NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
-          
+
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "New version: $NEW_VERSION"
 
       - name: Update Project File
         run: |
           NEW_VERSION="${{ steps.new-version.outputs.new_version }}"
-          
+
           # Update the project file
           sed -i "s/<Version>[^<]*<\/Version>/<Version>$NEW_VERSION<\/Version>/" ${{ env.PROJECT_PATH }}
-          
+
           # Update AssemblyVersion, FileVersion, InformationalVersion if present
           if grep -q '<AssemblyVersion>' ${{ env.PROJECT_PATH }}; then
             sed -i "s/<AssemblyVersion>[^<]*<\/AssemblyVersion>/<AssemblyVersion>$NEW_VERSION.0<\/AssemblyVersion>/" ${{ env.PROJECT_PATH }}
@@ -375,7 +375,7 @@ jobs:
           if grep -q '<InformationalVersion>' ${{ env.PROJECT_PATH }}; then
             sed -i "s/<InformationalVersion>[^<]*<\/InformationalVersion>/<InformationalVersion>$NEW_VERSION<\/InformationalVersion>/" ${{ env.PROJECT_PATH }}
           fi
-          
+
           echo "Updated project file with version: $NEW_VERSION"
 
       - name: Commit Version Change
@@ -391,8 +391,8 @@ jobs:
     runs-on: windows-latest
     needs: [test, check-changes, increment-version]
     if: |
-      always() && 
-      needs.check-changes.outputs.src_changed == 'true' && 
+      always() &&
+      needs.check-changes.outputs.src_changed == 'true' &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.increment-version.result == 'success' || needs.increment-version.result == 'skipped')
 
@@ -444,8 +444,8 @@ jobs:
     runs-on: macos-latest
     needs: [test, check-changes, increment-version]
     if: |
-      always() && 
-      needs.check-changes.outputs.src_changed == 'true' && 
+      always() &&
+      needs.check-changes.outputs.src_changed == 'true' &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.increment-version.result == 'success' || needs.increment-version.result == 'skipped')
 
@@ -490,8 +490,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test, check-changes, increment-version]
     if: |
-      always() && 
-      needs.check-changes.outputs.src_changed == 'true' && 
+      always() &&
+      needs.check-changes.outputs.src_changed == 'true' &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.increment-version.result == 'success' || needs.increment-version.result == 'skipped')
 
@@ -844,10 +844,10 @@ jobs:
           # Rename Windows artifacts
           mv ./artifacts/windows/MSSQLDBSink-windows-x64.zip ./artifacts/windows/MSSQLDBSink-windows-x64-$NEW_VERSION.zip
           mv ./artifacts/windows/MSSQLDBSink-windows-arm64.zip ./artifacts/windows/MSSQLDBSink-windows-arm64-$NEW_VERSION.zip
-          
+
           # Rename macOS artifacts
           mv ./artifacts/macos/MSSQLDBSink-macos-arm64.zip ./artifacts/macos/MSSQLDBSink-macos-arm64-$NEW_VERSION.zip
-          
+
           # Rename Linux artifacts
           mv ./artifacts/linux/MSSQLDBSink-linux-x64.tar.gz ./artifacts/linux/MSSQLDBSink-linux-x64-$NEW_VERSION.tar.gz
           mv ./artifacts/linux/MSSQLDBSink-linux-arm64.tar.gz ./artifacts/linux/MSSQLDBSink-linux-arm64-$NEW_VERSION.tar.gz
@@ -859,16 +859,16 @@ jobs:
           name: v${{ needs.increment-version.outputs.new_version }}
           body: |
             ## Release v${{ needs.increment-version.outputs.new_version }}
-            
+
             This release was automatically created from the merge to main.
-            
+
             **Download the appropriate file for your platform:**
             - **Windows x64**: `MSSQLDBSink-windows-x64-${{ needs.increment-version.outputs.new_version }}.zip`
             - **Windows ARM64**: `MSSQLDBSink-windows-arm64-${{ needs.increment-version.outputs.new_version }}.zip`
             - **macOS ARM64 (Apple Silicon)**: `MSSQLDBSink-macos-arm64-${{ needs.increment-version.outputs.new_version }}.zip`
             - **Linux x64**: `MSSQLDBSink-linux-x64-${{ needs.increment-version.outputs.new_version }}.tar.gz`
             - **Linux ARM64**: `MSSQLDBSink-linux-arm64-${{ needs.increment-version.outputs.new_version }}.tar.gz`
-            
+
             **Installation:**
             1. Download the appropriate file for your platform
             2. Extract the archive
