@@ -9,174 +9,47 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - rid: win-x64
-            archive_name: MSSQLDBSink-win-x64
-          - rid: win-arm64
-            archive_name: MSSQLDBSink-win-arm64
-          - rid: linux-x64
-            archive_name: MSSQLDBSink-linux-x64
-          - rid: osx-arm64
-            archive_name: MSSQLDBSink-osx-arm64
-
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '10.0.x'
-
-    - name: Calculate and Update Version
-      id: version_step
-      # Only run this on the primary matrix job to avoid race conditions/multiple commits.
-      if: matrix.rid == 'linux-x64'
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-
-        git fetch --tags
-        LATEST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "v0.0.0")
-        echo "Current Version: $LATEST_TAG"
-
-        # Get all commit messages since the last tag
-        if [ "$LATEST_TAG" == "v0.0.0" ]; then
-           LOGS=$(git log --pretty=format:"%s")
-        else
-           LOGS=$(git log $LATEST_TAG..HEAD --pretty=format:"%s")
-        fi
-
-        # Determine increment type
-        INCREMENT="patch"
-        if echo "$LOGS" | grep -qEi "(\+semver:\s*major|#major)"; then
-          INCREMENT="major"
-        elif echo "$LOGS" | grep -qEi "(\+semver:\s*minor|#minor)"; then
-          INCREMENT="minor"
-        fi
-
-        echo "Increment type: $INCREMENT"
-
-        VERSION=${LATEST_TAG#v}
-        IFS='.' read -r -a PARTS <<< "$VERSION"
-        MAJOR=${PARTS[0]}
-        MINOR=${PARTS[1]}
-        PATCH=${PARTS[2]}
-
-        if [ "$INCREMENT" == "major" ]; then
-          MAJOR=$((MAJOR + 1))
-          MINOR=0
-          PATCH=0
-        elif [ "$INCREMENT" == "minor" ]; then
-          MINOR=$((MINOR + 1))
-          PATCH=0
-        else
-          PATCH=$((PATCH + 1))
-        fi
-
-        NEXT_VERSION="$MAJOR.$MINOR.$PATCH"
-        echo "Next Version: $NEXT_VERSION"
-
-        # Update csproj
-        sed -i "s|<Version>.*</Version>|<Version>$NEXT_VERSION</Version>|" src/MSSQLDBSink/MSSQLDBSink.csproj
-
-        # Commit and Tag
-        git add src/MSSQLDBSink/MSSQLDBSink.csproj
-        git commit -m "Bump version to $NEXT_VERSION [skip ci]"
-        git tag "v$NEXT_VERSION"
-        git push origin main
-        git push origin "v$NEXT_VERSION"
-
-        echo "VERSION=$NEXT_VERSION" >> $GITHUB_ENV
-        echo "TAG_NAME=v$NEXT_VERSION" >> $GITHUB_ENV
-
-        # Output for other matrix jobs to consume?
-        # Actually, since we rewrite the file, other matrix jobs running in parallel might have stale code if they checked out earlier.
-        # BUT: The matrix jobs run in parallel. If 'linux-x64' pushes a new commit, the others are already running on the OLD commit.
-        # PROBLEM: We want the release artifacts to be from the NEW commit/version.
-        # SOLUTION: This job should probably be split.
-        # Job 1: Calculate version, update repo, push tag.
-        # Job 2: Build (triggered by the new tag? No, [skip ci] prevents that).
-        # We need a sequential flow.
-        # Job 1: Versioning.
-        # Job 2: Build matrix (depends on Versioning).
-
-    - name: Export Version for Matrix (Wait, this is inside matrix)
-      # This design is flawed for matrix + version bump.
-      run: echo "Design flaw detected, need to restructure workflow."
-
   versioning:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.calc.outputs.version }}
-      tag_name: ${{ steps.calc.outputs.tag_name }}
+      version: ${{ steps.gitversion.outputs.NEXT_VERSION_NO_PREFIX }}
+      tag_name: ${{ steps.gitversion.outputs.NEXT_VERSION }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Calculate and Update Version
-        id: calc
+      - name: Calculate Next Version
+        id: gitversion
+        uses: im-open/git-version-lite@v3.2.0
+        with:
+          tag-prefix: v
+          default-release-type: patch
+
+      - name: Update Version and Create Tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git fetch --tags
-          LATEST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "v0.0.0")
+          NEXT_VERSION="${{ steps.gitversion.outputs.NEXT_VERSION_NO_PREFIX }}"
+          TAG_NAME="${{ steps.gitversion.outputs.NEXT_VERSION }}"
 
-          if [ "$LATEST_TAG" == "v0.0.0" ]; then
-             LOGS=$(git log --pretty=format:"%s")
-          else
-             LOGS=$(git log $LATEST_TAG..HEAD --pretty=format:"%s")
-          fi
-
-          INCREMENT="patch"
-          if echo "$LOGS" | grep -qEi "(\+semver:\s*major|#major)"; then
-            INCREMENT="major"
-          elif echo "$LOGS" | grep -qEi "(\+semver:\s*minor|#minor)"; then
-            INCREMENT="minor"
-          fi
-
-          VERSION=${LATEST_TAG#v}
-          IFS='.' read -r -a PARTS <<< "$VERSION"
-          MAJOR=${PARTS[0]}
-          MINOR=${PARTS[1]}
-          PATCH=${PARTS[2]}
-
-          if [ "$INCREMENT" == "major" ]; then
-            MAJOR=$((MAJOR + 1))
-            MINOR=0
-            PATCH=0
-          elif [ "$INCREMENT" == "minor" ]; then
-            MINOR=$((MINOR + 1))
-            PATCH=0
-          else
-            PATCH=$((PATCH + 1))
-          fi
-
-          NEXT_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "Next Version: $NEXT_VERSION"
+          echo "Tag Name: $TAG_NAME"
 
           # Update csproj
           sed -i "s|<Version>.*</Version>|<Version>$NEXT_VERSION</Version>|" src/MSSQLDBSink/MSSQLDBSink.csproj
 
           git add src/MSSQLDBSink/MSSQLDBSink.csproj
           git commit -m "Bump version to $NEXT_VERSION [skip ci]"
-          git tag "v$NEXT_VERSION"
+          git tag "$TAG_NAME"
 
           # Push changes
           git push origin main
-          git push origin "v$NEXT_VERSION"
+          git push origin "$TAG_NAME"
 
-          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
-          echo "tag_name=v$NEXT_VERSION" >> $GITHUB_OUTPUT
-
-  build:
+  build-and-release:
     needs: versioning
     runs-on: ubuntu-latest
     strategy:
@@ -202,7 +75,6 @@ jobs:
 
       - name: Publish
         run: dotnet publish src/MSSQLDBSink/MSSQLDBSink.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -o release/${{ matrix.archive_name }}
-        # Note: We don't need to pass /p:Version because it is now in the csproj file we checked out!
 
       - name: Archive artifacts
         run: |
@@ -221,8 +93,8 @@ jobs:
             *.zip
             *.tar.gz
 
-  release:
-    needs: [versioning, build]
+  create-release:
+    needs: [versioning, build-and-release]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -231,18 +103,54 @@ jobs:
         with:
           ref: ${{ needs.versioning.outputs.tag_name }}
 
+      - name: Create Release
+        id: create-release
+        uses: im-open/create-release@v3.2.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          tag-name: ${{ needs.versioning.outputs.tag_name }}
+          release-name: Release ${{ needs.versioning.outputs.tag_name }}
+          commitish: ${{ needs.versioning.outputs.tag_name }}
+          generate-release-notes: true
+
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Upload win-x64 artifact
+        uses: im-open/upload-release-asset@v1.1.4
         with:
-          tag_name: ${{ needs.versioning.outputs.tag_name }}
-          name: Release ${{ needs.versioning.outputs.tag_name }}
-          generate_release_notes: true
-          files: |
-            artifacts/*.zip
-            artifacts/*.tar.gz
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          upload-url: ${{ steps.create-release.outputs.asset-upload-url }}
+          asset-path: artifacts/MSSQLDBSink-win-x64.zip
+          asset-name: MSSQLDBSink-win-x64.zip
+          asset-content-type: application/zip
+
+      - name: Upload win-arm64 artifact
+        uses: im-open/upload-release-asset@v1.1.4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          upload-url: ${{ steps.create-release.outputs.asset-upload-url }}
+          asset-path: artifacts/MSSQLDBSink-win-arm64.zip
+          asset-name: MSSQLDBSink-win-arm64.zip
+          asset-content-type: application/zip
+
+      - name: Upload linux-x64 artifact
+        uses: im-open/upload-release-asset@v1.1.4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          upload-url: ${{ steps.create-release.outputs.asset-upload-url }}
+          asset-path: artifacts/MSSQLDBSink-linux-x64.tar.gz
+          asset-name: MSSQLDBSink-linux-x64.tar.gz
+          asset-content-type: application/gzip
+
+      - name: Upload osx-arm64 artifact
+        uses: im-open/upload-release-asset@v1.1.4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          upload-url: ${{ steps.create-release.outputs.asset-upload-url }}
+          asset-path: artifacts/MSSQLDBSink-osx-arm64.tar.gz
+          asset-name: MSSQLDBSink-osx-arm64.tar.gz
+          asset-content-type: application/gzip
