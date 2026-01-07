@@ -27,6 +27,11 @@ dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --batch-
 dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --clear-target
 ```
 
+### Ignore Specific Columns
+```bash
+dotnet run -- "source..." "SourceDB" "target..." "TargetDB" --ignore-column "PasswordHash" --ignore-column "Users.LastLogin"
+```
+
 ### Using Connection Strings
 ```bash
 dotnet run -- --source-conn "Server=..." --target-conn "Server=..." "dbo.Users"
@@ -38,8 +43,18 @@ dotnet run -- --source-conn "Server=..." --target-conn "Server=..." "dbo.Users"
 ```
 
 ## 📝 Authentication
-When using server/database names, authentication uses **Azure Active Directory Interactive** (MFA supported).
-When using connection strings (`--source-conn`/`--target-conn`), authentication is determined by the connection string.
+The tool automatically selects the best authentication method based on the server name:
+
+1. **Azure SQL** (`*.database.windows.net`):
+   - Uses **Azure Active Directory Default** authentication.
+   - Tries: VS Creds -> CLI (`az login`) -> Env Vars -> Managed Identity -> Interactive Browser.
+
+2. **Local / On-Prem SQL** (e.g., `localhost`, `MyServer`):
+   - Uses **Integrated Security** (Windows Authentication) by default.
+   - Sets `TrustServerCertificate=True` and `Encrypt=False` for compatibility.
+
+3. **Custom Connection Strings** (`--source-conn` / `--target-conn`):
+   - Uses exactly what you provide in the string.
 
 ## 🔧 Batch Size Guidelines
 - Small records + Fast network: **2000-5000**
