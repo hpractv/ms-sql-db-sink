@@ -14,14 +14,16 @@ public class DatabaseSyncServiceMappingTests
         DatabaseSyncService service,
         List<string> source,
         List<string> target,
-        Dictionary<string,string> mappings)
+        Dictionary<string,string> mappings,
+        HashSet<string>? ignoredColumns = null)
     {
         var method = typeof(DatabaseSyncService).GetMethod(
             "ApplyColumnMappings",
             BindingFlags.Instance | BindingFlags.NonPublic);
         method.Should().NotBeNull();
 
-        var result = (ValueTuple<List<string>, Dictionary<string,string>>)method!.Invoke(service, new object[] { source, target, mappings })!;
+        var ignored = ignoredColumns ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = (ValueTuple<List<string>, Dictionary<string,string>>)method!.Invoke(service, new object[] { source, target, mappings, ignored })!;
         return (result.Item1, result.Item2);
     }
 
