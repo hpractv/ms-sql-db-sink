@@ -652,7 +652,7 @@ public class DatabaseSyncService : IDatabaseSyncService
         if (parts.Length > 1)
         {
             var schemaFreeName = parts[1];
-             if (_ignoredColumns.TryGetValue(schemaFreeName, out var simpleIgnores))
+            if (_ignoredColumns.TryGetValue(schemaFreeName, out var simpleIgnores))
             {
                 foreach (var col in simpleIgnores) ignored.Add(col);
             }
