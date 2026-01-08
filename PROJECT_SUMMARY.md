@@ -1,5 +1,22 @@
 # MSSQLDBSink - Project Summary
 
+> **📝 Note**: This documentation has been moved and enhanced in the wiki!
+> 
+> Please see the **[wiki/Project-Summary.md](wiki/Project-Summary.md)** for the most up-to-date and comprehensive technical documentation.
+>
+> The wiki version includes:
+> - Updated examples using compiled executable
+> - Enhanced build and publish instructions
+> - More detailed performance guidelines
+> - Comprehensive troubleshooting section
+>
+> **Quick Links:**
+> - [Wiki Home](wiki/Home.md)
+> - [Project Summary (Enhanced)](wiki/Project-Summary.md)
+> - [Usage Guide (Enhanced)](wiki/Usage-Guide.md)
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -18,22 +35,23 @@ MSSQLDBSink/
 
 ## 🚀 Quick Start
 
-### 1. Build the Project
+### 1. Build and Publish the Project
 ```bash
 cd MSSQLDBSink
-dotnet build
+dotnet publish -c Release -o ./publish
+cd publish
 ```
 
 ### 2. Run the Sync
 
 **Sync a single table:**
 ```bash
-dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
+./MSSQLDBSink "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
 ```
 
 **Sync all tables:**
 ```bash
-dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB"
+./MSSQLDBSink "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB"
 ```
 
 *Note: You will be prompted for Azure AD credentials when using server/database names.*

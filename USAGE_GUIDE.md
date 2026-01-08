@@ -1,5 +1,23 @@
 # Usage Guide - MSSQLDBSink
 
+> **📝 Note**: This documentation has been moved and enhanced in the wiki!
+> 
+> Please see the **[wiki/Usage-Guide.md](wiki/Usage-Guide.md)** for the most up-to-date and comprehensive usage documentation.
+>
+> The wiki version includes:
+> - Updated examples using compiled executable (not just `dotnet run`)
+> - Enhanced build and publish instructions
+> - More detailed scenarios and use cases
+> - Comprehensive troubleshooting section
+> - PowerShell and batch script examples
+>
+> **Quick Links:**
+> - [Wiki Home](wiki/Home.md)
+> - [Usage Guide (Enhanced)](wiki/Usage-Guide.md)
+> - [Project Summary (Technical)](wiki/Project-Summary.md)
+
+---
+
 ## 📖 Table of Contents
 1. [Quick Start](#quick-start)
 2. [Command Line Usage](#command-line-usage)
@@ -12,15 +30,16 @@
 
 ## Quick Start
 
-### Step 1: Build the Application
+### Step 1: Build and Publish the Application
 ```bash
 cd MSSQLDBSink
-dotnet build
+dotnet publish -c Release -o ./publish
+cd publish
 ```
 
 ### Step 2: Run Your First Sync
 ```bash
-dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
+./MSSQLDBSink "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
 ```
 *Note: Authentication is handled automatically:*
 *   *Azure SQL (`*.database.windows.net`): Uses Azure AD Default credentials (VS, CLI, Env Vars, or Interactive).*
@@ -31,8 +50,20 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
 ## Command Line Usage
 
 ### Basic Syntax
+
+Using the compiled executable:
 ```bash
-MSSQLDBSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
+./MSSQLDBSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
+```
+
+Using the compiled DLL:
+```bash
+dotnet MSSQLDBSink.dll [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
+```
+
+From source (development):
+```bash
+dotnet run --project src/MSSQLDBSink/MSSQLDBSink.csproj -- [arguments]
 ```
 
 ### Arguments
@@ -82,14 +113,25 @@ Specific tables or schemas to sync. Can be a single name or a comma-separated li
 
 ### Windows Batch File
 
-**run-sync.bat:**
+Create a simple wrapper for the compiled executable:
+
+**sync.bat:**
 ```batch
-dotnet run -- %*
+@echo off
+cd publish
+MSSQLDBSink.exe %*
 ```
 
 **Usage:**
 ```cmd
-run-sync.bat "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users" --batch-size 2000
+sync.bat "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users" --batch-size 2000
+```
+
+Or if using from source (development):
+
+**run-sync.bat:**
+```batch
+dotnet run --project src/MSSQLDBSink/MSSQLDBSink.csproj -- %*
 ```
 
 ### Environment Variables Approach
@@ -107,9 +149,10 @@ notepad setup-env.bat
 setup-env.bat
 ```
 
-**Step 4:** Use the environment variables
+**Step 4:** Use the environment variables with the compiled executable
 ```cmd
-dotnet run -- "%SOURCE_SERVER%" "%SOURCE_DB%" "%TARGET_SERVER%" "%TARGET_DB%" "dbo.Users"
+cd publish
+MSSQLDBSink.exe "%SOURCE_SERVER%" "%SOURCE_DB%" "%TARGET_SERVER%" "%TARGET_DB%" "dbo.Users"
 ```
 
 ---
@@ -180,7 +223,7 @@ dotnet run -- "%SOURCE_SERVER%" "%SOURCE_DB%" "%TARGET_SERVER%" "%TARGET_DB%" "d
 
 **Command:**
 ```bash
-dotnet run -- "prod.database.windows.net" "ProdDB" "test.database.windows.net" "TestDB"
+./MSSQLDBSink "prod.database.windows.net" "ProdDB" "test.database.windows.net" "TestDB"
 ```
 
 **Expected Result**: All tables from production copied to test (only new records)
@@ -193,7 +236,7 @@ dotnet run -- "prod.database.windows.net" "ProdDB" "test.database.windows.net" "
 
 **Command:**
 ```bash
-dotnet run -- "oltp.database.windows.net" "TransactionalDB" "olap.database.windows.net" "ReportingDB" "dbo.Transactions" --batch-size 2000 --threads 2
+./MSSQLDBSink "oltp.database.windows.net" "TransactionalDB" "olap.database.windows.net" "ReportingDB" "dbo.Transactions" --batch-size 2000 --threads 2
 ```
 
 **Expected Result**: Only new transactions are inserted into reporting database
@@ -206,7 +249,7 @@ dotnet run -- "oltp.database.windows.net" "TransactionalDB" "olap.database.windo
 
 **Command:**
 ```bash
-dotnet run -- "old.database.windows.net" "OldSystem" "new.database.windows.net" "NewSystem" "dbo.Users" --batch-size 500
+./MSSQLDBSink "old.database.windows.net" "OldSystem" "new.database.windows.net" "NewSystem" "dbo.Users" --batch-size 500
 ```
 
 **Expected Result**: Users table synced with 500 records per batch
@@ -219,7 +262,7 @@ dotnet run -- "old.database.windows.net" "OldSystem" "new.database.windows.net" 
 
 **Command:**
 ```bash
-dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users" --clear-target
+./MSSQLDBSink "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users" --clear-target
 ```
 
 **Expected Result**: Target table is truncated and all source records are bulk inserted
@@ -232,7 +275,7 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
 
 **Command:**
 ```bash
-dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Logs" --allow-no-pk --deep-compare
+./MSSQLDBSink "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Logs" --allow-no-pk --deep-compare
 ```
 
 **Expected Result**: Logs table synced using all columns for comparison
@@ -245,7 +288,7 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
 
 **Command:**
 ```bash
-dotnet run -- --source-conn "Server=source...;Database=SourceDB;User Id=user;Password=pass;..." --target-conn "Server=target...;Database=TargetDB;..." "dbo.Users"
+./MSSQLDBSink --source-conn "Server=source...;Database=SourceDB;User Id=user;Password=pass;..." --target-conn "Server=target...;Database=TargetDB;..." "dbo.Users"
 ```
 
 **Expected Result**: Sync using provided connection strings
@@ -258,7 +301,7 @@ dotnet run -- --source-conn "Server=source...;Database=SourceDB;User Id=user;Pas
 
 **Command:**
 ```bash
-dotnet run -- "localhost" "LocalSourceDB" "target.database.windows.net" "AzureTargetDB" "dbo.Users"
+./MSSQLDBSink "localhost" "LocalSourceDB" "target.database.windows.net" "AzureTargetDB" "dbo.Users"
 ```
 
 **Expected Result**:
@@ -274,7 +317,7 @@ dotnet run -- "localhost" "LocalSourceDB" "target.database.windows.net" "AzureTa
 
 **Command:**
 ```bash
-dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --ignore-column "PasswordHash" --ignore-column "LastLoginIP"
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --ignore-column "PasswordHash" --ignore-column "LastLoginIP"
 ```
 
 **Expected Result**:
@@ -388,7 +431,7 @@ Solutions:
 ## Example Session
 
 ```
-PS C:\MSSQLDBSink> dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
+PS C:\MSSQLDBSink\publish> ./MSSQLDBSink "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
 
 MS SQL DB Sink - Database Record Sync Tool
 ===========================================
