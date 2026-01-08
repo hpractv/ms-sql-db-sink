@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using Microsoft.Data.SqlClient;
 using MSSQLDBSink;
 using McMaster.Extensions.CommandLineUtils;
 using Spectre.Console;
@@ -51,6 +52,9 @@ class Program
     [Option("--target-columns-only", Description = "Import only columns that exist in target (default: false)")]
     public bool TargetColumnsOnly { get; set; }
 
+    [Option("--ignore-column", Description = "Column(s) to ignore/skip during sync. Format: Schema.Table.Column or Table.Column or just Column (can specify multiple)")]
+    public string[]? IgnoreColumn { get; set; }
+
     [Option("--map-column", Description = "Map source column to target column. Format: Schema.Table.SourceCol=TargetCol (can specify multiple)")]
     public string[]? MapColumn { get; set; }
 
@@ -94,9 +98,13 @@ class Program
         }
         else
         {
-            var sourceConn = new AzureAdConnection(SourceServer!, SourceDb!);
-            sourceConnStr = sourceConn.ConnectionString;
-            AnsiConsole.MarkupLine($"[cyan]Source:[/] {SourceServer} ([grey]{SourceDb}[/])");
+            sourceConnStr = GetConnectionString(SourceServer!, SourceDb!);
+            var builder = new SqlConnectionStringBuilder(sourceConnStr);
+            var authInfo = builder.Authentication != SqlAuthenticationMethod.NotSpecified
+                ? builder.Authentication.ToString()
+                : (builder.IntegratedSecurity ? "Integrated Security" : "SQL Auth");
+
+            AnsiConsole.MarkupLine($"[cyan]Source:[/] {SourceServer} ([grey]{SourceDb}[/]) - [green]{authInfo}[/]");
         }
 
         if (!string.IsNullOrWhiteSpace(TargetConnectionString))
@@ -106,9 +114,13 @@ class Program
         }
         else
         {
-            var targetConn = new AzureAdConnection(TargetServer!, TargetDb!);
-            targetConnStr = targetConn.ConnectionString;
-            AnsiConsole.MarkupLine($"[cyan]Target:[/] {TargetServer} ([grey]{TargetDb}[/])");
+            targetConnStr = GetConnectionString(TargetServer!, TargetDb!);
+            var builder = new SqlConnectionStringBuilder(targetConnStr);
+            var authInfo = builder.Authentication != SqlAuthenticationMethod.NotSpecified
+                ? builder.Authentication.ToString()
+                : (builder.IntegratedSecurity ? "Integrated Security" : "SQL Auth");
+
+            AnsiConsole.MarkupLine($"[cyan]Target:[/] {TargetServer} ([grey]{TargetDb}[/]) - [green]{authInfo}[/]");
         }
 
         var info = new Table();
@@ -120,6 +132,7 @@ class Program
         info.AddRow("[cyan]Deep Compare[/]", DeepCompare ? "[green]Yes[/]" : "[red]No[/]");
         info.AddRow("[cyan]Clear Target[/]", ClearTarget ? "[green]Yes[/]" : "[red]No[/]");
         info.AddRow("[cyan]Target Columns Only[/]", TargetColumnsOnly ? "[green]Yes[/]" : "[red]No[/]");
+        info.AddRow("[cyan]Ignored Columns[/]", IgnoreColumn?.Length > 0 ? $"{IgnoreColumn.Length} column(s)" : "[grey]None[/]");
         info.AddRow("[cyan]Column Mappings[/]", MapColumn?.Length > 0 ? $"{MapColumn.Length} mapping(s)" : "[grey]None[/]");
         info.AddRow("[cyan]Compare Counts & Schema[/]", CompareCountsAndSchema ? "[green]Yes[/]" : "[red]No[/]");
         info.AddRow("[cyan]Output Directory[/]", OutputDir);
@@ -128,6 +141,9 @@ class Program
 
         // Parse column mappings
         var columnMappings = ParseColumnMappings(MapColumn);
+        // Parse ignored columns
+        var ignoredColumns = ParseIgnoredColumns(IgnoreColumn);
+
         if (columnMappings.Count > 0)
         {
             AnsiConsole.MarkupLine("[cyan]Column Mappings:[/]");
@@ -136,6 +152,23 @@ class Program
                 foreach (var colMapping in tableMapping.Value)
                 {
                     AnsiConsole.MarkupLine($"  [grey]{tableMapping.Key}:[/] {colMapping.Key} → {colMapping.Value}");
+                }
+            }
+            AnsiConsole.WriteLine();
+        }
+
+        if (ignoredColumns.Count > 0)
+        {
+            AnsiConsole.MarkupLine("[cyan]Ignored Columns:[/]");
+            foreach (var tableIgnore in ignoredColumns)
+            {
+                if (tableIgnore.Key == "*")
+                {
+                    AnsiConsole.MarkupLine($"  [grey]All Tables:[/] {string.Join(", ", tableIgnore.Value)}");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine($"  [grey]{tableIgnore.Key}:[/] {string.Join(", ", tableIgnore.Value)}");
                 }
             }
             AnsiConsole.WriteLine();
@@ -184,7 +217,8 @@ class Program
                     DeepCompare = DeepCompare,
                     ClearTarget = ClearTarget,
                     TargetColumnsOnly = TargetColumnsOnly,
-                    ColumnMappings = columnMappings
+                    ColumnMappings = columnMappings,
+                    IgnoredColumns = ignoredColumns
                 };
 
                 await syncService.SyncTablesAsync(tableSelections, ThreadCount, parameters);
@@ -196,6 +230,55 @@ class Program
             AnsiConsole.MarkupLine($"\n[red]✗[/] Error during sync: [red]{Markup.Escape(ex.Message)}[/]");
             AnsiConsole.WriteLine($"Stack trace: {ex.StackTrace}");
         }
+    }
+
+    /// <summary>
+    /// Parses ignored column arguments into a dictionary structure.
+    /// Format: "Schema.Table.Column" or "Table.Column" (dbo) or "Column" (all tables)
+    /// </summary>
+    private static Dictionary<string, HashSet<string>> ParseIgnoredColumns(string[]? ignores)
+    {
+        var result = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        if (ignores == null || ignores.Length == 0)
+            return result;
+
+        foreach (var ignore in ignores)
+        {
+            if (string.IsNullOrWhiteSpace(ignore))
+                continue;
+
+            var parts = ignore.Trim().Split('.');
+            string tableName;
+            string columnName;
+
+            if (parts.Length == 3)
+            {
+                // Schema.Table.Column
+                tableName = $"{parts[0]}.{parts[1]}";
+                columnName = parts[2];
+            }
+            else if (parts.Length == 2)
+            {
+                // Table.Column (assume dbo)
+                tableName = $"dbo.{parts[0]}";
+                columnName = parts[1];
+            }
+            else
+            {
+                // Just Column (applies to all tables)
+                tableName = "*";
+                columnName = parts[0];
+            }
+
+            if (!result.ContainsKey(tableName))
+            {
+                result[tableName] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+            result[tableName].Add(columnName);
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -258,5 +341,25 @@ class Program
         }
 
         return result;
+    }
+
+    private string GetConnectionString(string server, string database)
+    {
+        // Check if it's likely an Azure SQL Database
+        if (server.Contains(".database.windows.net", StringComparison.OrdinalIgnoreCase))
+        {
+            return new AzureAdConnection(server, database).ConnectionString;
+        }
+
+        // For local/on-prem, default to Integrated Security (Windows Auth)
+        var builder = new SqlConnectionStringBuilder
+        {
+            DataSource = server,
+            InitialCatalog = database,
+            IntegratedSecurity = true,
+            TrustServerCertificate = true,
+            Encrypt = false // Often needed for local dev
+        };
+        return builder.ConnectionString;
     }
 }

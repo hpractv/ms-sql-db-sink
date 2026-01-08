@@ -48,6 +48,11 @@ public class SyncParameters
     /// Format: "Schema.Table.SourceCol=TargetCol"
     /// </summary>
     public Dictionary<string, Dictionary<string, string>> ColumnMappings { get; set; } = new();
+
+    /// <summary>
+    /// Ignored columns: TableName -> Set of Column Names to ignore
+    /// </summary>
+    public Dictionary<string, HashSet<string>> IgnoredColumns { get; set; } = new();
 }
 
 public class TableSyncResult
