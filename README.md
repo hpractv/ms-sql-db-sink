@@ -8,6 +8,11 @@ This project intends to be the "kitchen sink" solution for transferring SQL Serv
 > **WARNING: USE AT YOUR OWN RISK. ALWAYS BACK UP YOUR DATA BEFORE USING THIS TOOL.**
 > This tool modifies data in the target database. While checks are in place and the tool detects primary keys to avoid duplicates, data loss or corruption is possible if used incorrectly or if unexpected errors occur. The authors provide no warranty or guarantee.
 
+## 📚 Documentation
+
+- **[Usage Guide](wiki/Usage-Guide.md)** - Comprehensive usage examples, scenarios, and best practices
+- **[Project Summary](wiki/Project-Summary.md)** - Technical architecture and implementation details
+
 ## Features
 
 - ✅ **Smart Sync**: Only inserts records that don't exist in the target database (compares by primary keys)
@@ -169,6 +174,53 @@ The tool generates JSON result files in the output directory (default: `results/
 - Per-table sync results (status, counts, duration, errors)
 - Enables manual resume by identifying failed/skipped tables
 
+## 🚀 Common Commands
+
+### Sync Single Table
+```bash
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users"
+```
+
+### Sync Multiple Tables/Schemas
+```bash
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users, Sales, HR.Employees"
+```
+
+### Sync All Tables
+```bash
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB"
+```
+
+### Sync with Options
+```bash
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --batch-size 2000 --threads 4
+```
+
+### Clear Target and Bulk Insert
+```bash
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --clear-target
+```
+
+### Ignore Specific Columns
+```bash
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" --ignore-column "PasswordHash" --ignore-column "Users.LastLogin"
+```
+
+### Using Connection Strings
+```bash
+./MSSQLDBSink --source-conn "Server=..." --target-conn "Server=..." "dbo.Users"
+```
+
+### Using PowerShell
+```powershell
+.\run-sync.ps1 -SourceServer "source..." -SourceDb "SourceDB" -TargetServer "target..." -TargetDb "TargetDB" -TableName "dbo.Users" -Threads 4
+```
+
+### Running from Source (Development)
+```bash
+dotnet run --project src/MSSQLDBSink/MSSQLDBSink.csproj -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users"
+```
+
 ## Batch Size Guidelines
 
 | Record Size | Network Speed | Recommended Batch Size |
@@ -189,12 +241,39 @@ The tool generates JSON result files in the output directory (default: `results/
 - VIEW DEFINITION
 - DELETE/TRUNCATE (if using `--clear-target`)
 
-## Additional Documentation
+## 📊 What It Does
 
-For more detailed information, see the [wiki documentation](wiki/):
-- [Project Summary](wiki/Project-Summary.md) - Technical architecture and implementation details
-- [Usage Guide](wiki/Usage-Guide.md) - Comprehensive usage examples and scenarios
-- [Quick Reference](QUICK_REFERENCE.md) - Common commands and troubleshooting
+✅ Inserts records that don't exist in target  
+✅ Skips records that already exist  
+✅ Skips tables where target count >= source count  
+✅ Bulk inserts when `--clear-target` is used  
+❌ Does NOT update existing records (unless `--clear-target`)  
+❌ Does NOT delete records (unless `--clear-target`)  
+❌ Does NOT modify schemas
+
+## 🔑 Prerequisites
+
+- Target database must exist
+- Target tables must exist (same schema as source)
+- Tables typically need primary keys (use `--allow-no-pk --deep-compare` for tables without PKs)
+- Proper database permissions
+
+## 🐛 Quick Troubleshooting
+
+| Error              | Solution                           |
+| ------------------ | ---------------------------------- |
+| Connection timeout | Check firewall rules, whitelist IP |
+| Permission denied  | Grant SELECT/INSERT permissions    |
+| No primary key     | Use `--allow-no-pk --deep-compare` |
+| Duplicate key      | Check schema matches exactly       |
+| Target >= Source   | Use `--clear-target` to force sync |
+
+## 📞 Getting Help
+
+1. Review the **[Usage Guide](wiki/Usage-Guide.md)** for comprehensive examples and scenarios
+2. Check the **[Project Summary](wiki/Project-Summary.md)** for technical details
+3. Run with `--help` for all command-line options
+4. Review JSON result files in `results/` directory
 
 ## License
 
