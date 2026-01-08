@@ -4,42 +4,47 @@
 
 ### Sync Single Table
 ```bash
-dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users"
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users"
 ```
 
 ### Sync Multiple Tables/Schemas
 ```bash
-dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users, Sales, HR.Employees"
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users, Sales, HR.Employees"
 ```
 
 ### Sync All Tables
 ```bash
-dotnet run -- "source..." "SourceDB" "target..." "TargetDB"
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB"
 ```
 
 ### Sync with Options
 ```bash
-dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --batch-size 2000 --threads 4
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --batch-size 2000 --threads 4
 ```
 
 ### Clear Target and Bulk Insert
 ```bash
-dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --clear-target
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --clear-target
 ```
 
 ### Ignore Specific Columns
 ```bash
-dotnet run -- "source..." "SourceDB" "target..." "TargetDB" --ignore-column "PasswordHash" --ignore-column "Users.LastLogin"
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" --ignore-column "PasswordHash" --ignore-column "Users.LastLogin"
 ```
 
 ### Using Connection Strings
 ```bash
-dotnet run -- --source-conn "Server=..." --target-conn "Server=..." "dbo.Users"
+./MSSQLDBSink --source-conn "Server=..." --target-conn "Server=..." "dbo.Users"
 ```
 
 ### Using PowerShell
 ```powershell
 .\run-sync.ps1 -SourceServer "source..." -SourceDb "SourceDB" -TargetServer "target..." -TargetDb "TargetDB" -TableName "dbo.Users" -Threads 4
+```
+
+### Running from Source (Development)
+```bash
+dotnet run --project src/MSSQLDBSink/MSSQLDBSink.csproj -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users"
 ```
 
 ## 📝 Authentication
@@ -92,9 +97,10 @@ The tool automatically selects the best authentication method based on the serve
 - **AzureAdConnection.cs** - Azure AD connection logic
 - **DatabaseSyncService.cs** - Core sync logic
 - **SyncRunResult.cs** - Result models for JSON output
-- **README.md** - Full documentation
-- **USAGE_GUIDE.md** - Detailed usage examples
-- **PROJECT_SUMMARY.md** - Technical details
+- **README.md** - Main documentation
+- **QUICK_REFERENCE.md** - Quick command reference
+- **wiki/Project-Summary.md** - Detailed technical documentation
+- **wiki/Usage-Guide.md** - Comprehensive usage guide
 
 ## 🐛 Quick Troubleshooting
 | Error              | Solution                           |
@@ -106,9 +112,9 @@ The tool automatically selects the best authentication method based on the serve
 | Target >= Source   | Use `--clear-target` to force sync |
 
 ## 📞 Getting Help
-1. Check **README.md** for detailed docs
-2. Review **USAGE_GUIDE.md** for examples
-3. Check **PROJECT_SUMMARY.md** for technical info
+1. Check **README.md** for main documentation
+2. Review **wiki/Usage-Guide.md** for comprehensive examples
+3. Check **wiki/Project-Summary.md** for technical details
 4. Run with `--help` for command-line options
 5. Review JSON result files in `results/` directory
 

@@ -32,6 +32,7 @@ This project intends to be the "kitchen sink" solution for transferring SQL Serv
 
 ## Installation
 
+### Option 1: Build from Source
 1. Clone or download this repository
 2. Navigate to the project directory
 3. Build the project:
@@ -39,12 +40,40 @@ This project intends to be the "kitchen sink" solution for transferring SQL Serv
    dotnet build
    ```
 
+### Option 2: Publish for Distribution
+1. Build and publish the application:
+   ```bash
+   dotnet publish -c Release -o ./publish
+   ```
+2. The compiled executable will be in the `publish` folder
+3. Run the executable directly:
+   ```bash
+   cd publish
+   ./MSSQLDBSink [arguments]
+   ```
+   Or on Windows:
+   ```cmd
+   cd publish
+   MSSQLDBSink.exe [arguments]
+   ```
+
 ## Usage
 
 ### Command Line Syntax
 
+Using the compiled executable:
 ```bash
-MSSQLDBSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
+./MSSQLDBSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
+```
+
+Or using the .NET CLI (from source):
+```bash
+dotnet run --project src/MSSQLDBSink/MSSQLDBSink.csproj -- [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
+```
+
+Or using the compiled DLL:
+```bash
+dotnet MSSQLDBSink.dll [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
 ```
 
 ### Arguments
@@ -71,42 +100,55 @@ MSSQLDBSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [opt
 
 When using server/database name arguments, the tool automatically uses **Azure Active Directory Interactive** authentication (supports MFA). When using connection strings, authentication is determined by the connection string.
 
+**Authentication Methods:**
+
+1. **Azure SQL** (`*.database.windows.net`):
+   - Uses **Azure Active Directory Default** authentication
+   - Tries: VS Creds → CLI (`az login`) → Env Vars → Managed Identity → Interactive Browser
+
+2. **Local / On-Prem SQL** (e.g., `localhost`, `MyServer`):
+   - Uses **Integrated Security** (Windows Authentication) by default
+   - Sets `TrustServerCertificate=True` and `Encrypt=False` for compatibility
+
+3. **Custom Connection Strings** (`--source-conn` / `--target-conn`):
+   - Uses exactly what you provide in the string
+
 ### Examples
 
 #### Sync a Single Table
 
 ```bash
-dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
+./MSSQLDBSink "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
 ```
 
 #### Sync Multiple Tables and Schemas
 
 ```bash
-dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users, Sales, HR.Employees"
+./MSSQLDBSink "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users, Sales, HR.Employees"
 ```
 
 #### Sync All Tables with Parallel Processing
 
 ```bash
-dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "all" --threads 4
+./MSSQLDBSink "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "all" --threads 4
 ```
 
 #### Using Connection Strings
 
 ```bash
-dotnet run -- --source-conn "Server=source...;Database=SourceDB;..." --target-conn "Server=target...;Database=TargetDB;..." "dbo.Users"
+./MSSQLDBSink --source-conn "Server=source...;Database=SourceDB;..." --target-conn "Server=target...;Database=TargetDB;..." "dbo.Users"
 ```
 
 #### Clear Target and Bulk Insert
 
 ```bash
-dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --clear-target
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --clear-target
 ```
 
 #### Sync Tables Without Primary Keys
 
 ```bash
-dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Logs" --allow-no-pk --deep-compare
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Logs" --allow-no-pk --deep-compare
 ```
 
 ## How It Works
@@ -126,6 +168,33 @@ The tool generates JSON result files in the output directory (default: `results/
 - All command-line parameters used
 - Per-table sync results (status, counts, duration, errors)
 - Enables manual resume by identifying failed/skipped tables
+
+## Batch Size Guidelines
+
+| Record Size | Network Speed | Recommended Batch Size |
+|------------|---------------|----------------------|
+| Small      | Fast          | 2000-5000           |
+| Small      | Slow          | 500-1000            |
+| Large      | Fast          | 500-1000            |
+| Large      | Slow          | 100-500             |
+
+## Required Permissions
+
+**Source Database:**
+- SELECT on tables
+- VIEW DEFINITION
+
+**Target Database:**
+- INSERT on tables
+- VIEW DEFINITION
+- DELETE/TRUNCATE (if using `--clear-target`)
+
+## Additional Documentation
+
+For more detailed information, see the [wiki documentation](wiki/):
+- [Project Summary](wiki/Project-Summary.md) - Technical architecture and implementation details
+- [Usage Guide](wiki/Usage-Guide.md) - Comprehensive usage examples and scenarios
+- [Quick Reference](QUICK_REFERENCE.md) - Common commands and troubleshooting
 
 ## License
 
