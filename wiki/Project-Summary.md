@@ -294,7 +294,7 @@ Contributions welcome! Feel free to submit issues or pull requests.
 
 ---
 
-**Created**: December 2025  
 **Version**: 2.0.0  
 **Target Framework**: .NET 10.0  
-**Repository**: https://github.com/hpractv/ms-sql-db-sink
+**Repository**: https://github.com/hpractv/ms-sql-db-sink  
+**Last Updated**: January 2026
