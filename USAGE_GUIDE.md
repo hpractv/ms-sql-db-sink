@@ -22,7 +22,9 @@ dotnet build
 ```bash
 dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
 ```
-*Note: A browser window or device code prompt will appear for Azure AD authentication when using server/database names.*
+*Note: Authentication is handled automatically:*
+*   *Azure SQL (`*.database.windows.net`): Uses Azure AD Default credentials (VS, CLI, Env Vars, or Interactive).*
+*   *Local/On-Prem SQL: Uses Integrated Security (Windows Auth).*
 
 ---
 
@@ -68,6 +70,9 @@ Specific tables or schemas to sync. Can be a single name or a comma-separated li
 - `--allow-no-pk`: Allow processing tables without primary keys
 - `--deep-compare`: Use all columns as composite key (requires `--allow-no-pk`)
 - `--clear-target`: Truncate target and bulk insert (fast)
+- `--target-columns-only`: Import only columns that exist in target
+- `--ignore-column`: Skip specific columns (Format: `Table.Col` or `Col`)
+- `--map-column`: Map source to target column (Format: `Table.Source=Target`)
 - `-o|--output-dir <DIR>`: Directory for JSON results (default: results)
 - `-?|-h|--help`: Show help
 
@@ -236,7 +241,7 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
 
 ### Scenario 6: Using Connection Strings
 
-**Goal**: Use custom connection strings instead of Azure AD
+**Goal**: Use custom connection strings or SQL Authentication
 
 **Command:**
 ```bash
@@ -247,11 +252,43 @@ dotnet run -- --source-conn "Server=source...;Database=SourceDB;User Id=user;Pas
 
 ---
 
+### Scenario 7: Local/On-Prem to Azure Sync
+
+**Goal**: Sync from a local SQL Server to an Azure SQL Database
+
+**Command:**
+```bash
+dotnet run -- "localhost" "LocalSourceDB" "target.database.windows.net" "AzureTargetDB" "dbo.Users"
+```
+
+**Expected Result**:
+- Source connects using Windows Authentication (Integrated Security)
+- Target connects using Azure AD (Default Credentials)
+- Data is synced from local to cloud
+
+---
+
+### Scenario 8: Ignoring Columns
+
+**Goal**: Sync a table but skip sensitive or computed columns.
+
+**Command:**
+```bash
+dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --ignore-column "PasswordHash" --ignore-column "LastLoginIP"
+```
+
+**Expected Result**:
+- `dbo.Users` is synced.
+- `PasswordHash` and `LastLoginIP` columns are completely ignored (not selected from source, not inserted into target).
+
+---
+
 ## Best Practices
 
 ### 1. Security
 ✅ **DO:**
-- Use Azure AD authentication when possible
+- Use Azure AD authentication when possible (Default Credentials supported)
+- Use Integrated Security for local connections
 - Use environment variables for connection strings if automating
 - Use Azure Key Vault in production
 - Create dedicated SQL users with minimal permissions (SELECT/INSERT only)
