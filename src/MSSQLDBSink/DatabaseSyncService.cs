@@ -971,7 +971,7 @@ public class DatabaseSyncService : IDatabaseSyncService
                     stopwatch.Stop();
                     tableResult.Status = "Completed";
                     tableResult.Inserted = 0;
-                    tableResult.Skipped = 0;
+                    tableResult.Skipped = startRowOffset; // Record that we skipped these rows
                     tableResult.EndTime = DateTime.UtcNow;
                     tableResult.DurationSeconds = stopwatch.Elapsed.TotalSeconds;
                     lock (_resultLock)
@@ -988,7 +988,7 @@ public class DatabaseSyncService : IDatabaseSyncService
         
         int offset = startRowOffset;
         int totalInserted = 0;
-        int totalSkipped = 0;
+        int totalSkipped = startRowOffset; // Initialize with the number of rows we're skipping from the start
 
         while (offset < sourceCount)
         {
