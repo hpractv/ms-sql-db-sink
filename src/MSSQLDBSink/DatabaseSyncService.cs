@@ -347,13 +347,13 @@ public class DatabaseSyncService : IDatabaseSyncService
             {
                 var tableName = $"{tablesToSync[i].SchemaName}.{tablesToSync[i].TableName}";
                 _startRowOffsets[tableName] = offsetsList[i];
-                
+
                 if (offsetsList[i] > 0)
                 {
                     AnsiConsole.MarkupLine($"[gray]→ Table {Markup.Escape(tableName)} will skip first {offsetsList[i]:N0} rows[/]");
                 }
             }
-            
+
             // Log warning if counts don't match
             if (offsetsList.Count != tablesToSync.Count)
             {
@@ -962,7 +962,7 @@ public class DatabaseSyncService : IDatabaseSyncService
         {
             startRowOffset = configuredOffset;
             tableResult.StartRowOffset = startRowOffset;
-            
+
             if (startRowOffset > 0)
             {
                 if (startRowOffset >= sourceCount)
@@ -981,11 +981,26 @@ public class DatabaseSyncService : IDatabaseSyncService
                     await SaveResultFileAsync();
                     return;
                 }
-                
-                AnsiConsole.MarkupLine($"[gray]  → Starting from row {startRowOffset:N0} (skipping first {startRowOffset:N0} rows)[/]");
+
+                // Validate that we have primary keys for consistent ordering (required for continuation)
+                if (!primaryKeys.Any())
+                {
+                    AnsiConsole.MarkupLine($"[yellow]⚠ Warning:[/] Start row offset specified for {GetDisplayName(tableName)} but no primary keys found. Ordering may be inconsistent between runs.");
+                }
+
+                // Log that we're using primary key ordering for continuation
+                if (primaryKeys.Any())
+                {
+                    var pkList = string.Join(", ", primaryKeys);
+                    AnsiConsole.MarkupLine($"[gray]  → Starting from row {startRowOffset:N0} (skipping first {startRowOffset:N0} rows, ordered by: {Markup.Escape(pkList)})[/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine($"[gray]  → Starting from row {startRowOffset:N0} (skipping first {startRowOffset:N0} rows)[/]");
+                }
             }
         }
-        
+
         int offset = startRowOffset;
         int totalInserted = 0;
         int totalSkipped = startRowOffset; // Initialize with the number of rows we're skipping from the start
@@ -1634,18 +1649,23 @@ public class DatabaseSyncService : IDatabaseSyncService
         string columnList = string.Join(", ", selectParts);
 
         // Determine ORDER BY clause
-        // Use primary keys if available, otherwise fallback to first column or (SELECT NULL)
+        // CRITICAL: Always order by primary keys when available to ensure consistent ordering
+        // for continuation/resume functionality. Without consistent ordering, OFFSET won't
+        // correspond to the same rows between runs.
         string orderByClause;
         if (primaryKeys != null && primaryKeys.Any())
         {
             // Primary keys are in source column names (usually).
             // We need to make sure we use the source column names for sorting.
             // (The primaryKeys list passed in *is* source column names).
+            // Order by all primary key columns to ensure deterministic ordering
             orderByClause = string.Join(", ", primaryKeys.Select(pk => $"[{pk}]"));
         }
         else if (columns.Any())
         {
              // Fallback to first available column (better than nothing)
+             // NOTE: This should rarely happen as tables without PKs are typically skipped
+             // unless --allow-no-pk is set, in which case primaryKeys would be set to columns
              // We need the source column name
              var firstTarget = columns.First();
              var firstSource = targetToSourceMap.TryGetValue(firstTarget, out var mapped) ? mapped : firstTarget;
@@ -1653,6 +1673,7 @@ public class DatabaseSyncService : IDatabaseSyncService
         }
         else
         {
+            // This should never happen in practice, but handle gracefully
             orderByClause = "(SELECT NULL)";
         }
 
