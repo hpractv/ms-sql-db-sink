@@ -32,6 +32,12 @@ dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --clear-
 dotnet run -- "source..." "SourceDB" "target..." "TargetDB" --ignore-column "PasswordHash" --ignore-column "Users.LastLogin"
 ```
 
+### Resume Failed Sync
+```bash
+# Resume with row offsets and primary key ordering for reliability
+dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users,dbo.Orders" --start-row "10000,5000" --order-by-pk
+```
+
 ### Using Connection Strings
 ```bash
 dotnet run -- --source-conn "Server=..." --target-conn "Server=..." "dbo.Users"

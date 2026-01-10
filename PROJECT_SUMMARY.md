@@ -80,6 +80,7 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
    - Real-time console output
    - JSON result files with full run details
    - Enables manual resume by identifying failed tables
+   - Optional primary key ordering for consistent continuation (`--order-by-pk`)
 
 ## 📦 Dependencies
 
@@ -102,6 +103,7 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
    - Identifies tables to sync based on selection criteria
    - Retrieves primary key columns (or uses all columns for deep compare)
    - Counts records in both databases
+   - Optionally orders source data by primary keys when `--order-by-pk` is enabled
 
 3. **Optimization Phase**
    - Compares source and target counts
