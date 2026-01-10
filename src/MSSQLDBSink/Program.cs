@@ -9,7 +9,7 @@ namespace MSSQLDBSink;
 
 [Command(Name = "MSSQLDBSink", Description = "Synchronizes records between SQL Server databases.")]
 [HelpOption("-?|-h|--help")]
-class Program
+public class Program
 {
     public static int Main(string[] args) => CommandLineApplication.Execute<Program>(args);
 
@@ -57,6 +57,9 @@ class Program
 
     [Option("--map-column", Description = "Map source column to target column. Format: Schema.Table.SourceCol=TargetCol (can specify multiple)")]
     public string[]? MapColumn { get; set; }
+
+    [Option("--start-row", Description = "Starting row number(s) to skip for each table. Comma-separated list matching table order (e.g., '0,1000,500' for 3 tables)")]
+    public string? StartRow { get; set; }
 
     [Option("-o|--output-dir", Description = "Directory for saving JSON results (default: results)")]
     public string OutputDir { get; set; } = "results";
@@ -134,6 +137,7 @@ class Program
         info.AddRow("[cyan]Target Columns Only[/]", TargetColumnsOnly ? "[green]Yes[/]" : "[red]No[/]");
         info.AddRow("[cyan]Ignored Columns[/]", IgnoreColumn?.Length > 0 ? $"{IgnoreColumn.Length} column(s)" : "[grey]None[/]");
         info.AddRow("[cyan]Column Mappings[/]", MapColumn?.Length > 0 ? $"{MapColumn.Length} mapping(s)" : "[grey]None[/]");
+        info.AddRow("[cyan]Start Row Offsets[/]", !string.IsNullOrWhiteSpace(StartRow) ? StartRow : "[grey]None[/]");
         info.AddRow("[cyan]Compare Counts & Schema[/]", CompareCountsAndSchema ? "[green]Yes[/]" : "[red]No[/]");
         info.AddRow("[cyan]Output Directory[/]", OutputDir);
         AnsiConsole.Write(info);
@@ -143,6 +147,8 @@ class Program
         var columnMappings = ParseColumnMappings(MapColumn);
         // Parse ignored columns
         var ignoredColumns = ParseIgnoredColumns(IgnoreColumn);
+        // Parse start row offsets
+        var startRowOffsets = ParseStartRowOffsets(StartRow);
 
         if (columnMappings.Count > 0)
         {
@@ -170,6 +176,16 @@ class Program
                 {
                     AnsiConsole.MarkupLine($"  [grey]{tableIgnore.Key}:[/] {string.Join(", ", tableIgnore.Value)}");
                 }
+            }
+            AnsiConsole.WriteLine();
+        }
+
+        if (startRowOffsets.Count > 0)
+        {
+            AnsiConsole.MarkupLine("[cyan]Start Row Offsets:[/]");
+            for (int i = 0; i < startRowOffsets.Count; i++)
+            {
+                AnsiConsole.MarkupLine($"  [grey]Table {i + 1}:[/] Skip first {startRowOffsets[i]:N0} rows");
             }
             AnsiConsole.WriteLine();
         }
@@ -218,7 +234,8 @@ class Program
                     ClearTarget = ClearTarget,
                     TargetColumnsOnly = TargetColumnsOnly,
                     ColumnMappings = columnMappings,
-                    IgnoredColumns = ignoredColumns
+                    IgnoredColumns = ignoredColumns,
+                    StartRowOffsets = startRowOffsets
                 };
 
                 await syncService.SyncTablesAsync(tableSelections, ThreadCount, parameters);
@@ -338,6 +355,44 @@ class Program
             }
 
             result[tableName][sourceColumn] = targetColumn;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Parses start row offset argument into a list of integers.
+    /// Format: "0,1000,500" - comma-separated list of row numbers to skip for each table
+    /// The order matches the order of tables being synced
+    /// </summary>
+    public static List<int> ParseStartRowOffsets(string? startRow)
+    {
+        var result = new List<int>();
+
+        if (string.IsNullOrWhiteSpace(startRow))
+            return result;
+
+        var parts = startRow.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        
+        foreach (var part in parts)
+        {
+            if (int.TryParse(part, out int offset))
+            {
+                if (offset < 0)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] Invalid start row offset '{part}'. Must be non-negative. Using 0 instead.");
+                    result.Add(0);
+                }
+                else
+                {
+                    result.Add(offset);
+                }
+            }
+            else
+            {
+                AnsiConsole.MarkupLine($"[yellow]Warning:[/] Invalid start row offset '{part}'. Using 0 instead.");
+                result.Add(0);
+            }
         }
 
         return result;

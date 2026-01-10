@@ -31,6 +31,9 @@ public class DatabaseSyncService : IDatabaseSyncService
     // Ignored columns: TableName -> Set of Column Names to ignore
     private Dictionary<string, HashSet<string>> _ignoredColumns = new(StringComparer.OrdinalIgnoreCase);
 
+    // Start row offsets: TableName -> Starting row number to skip
+    private Dictionary<string, int> _startRowOffsets = new(StringComparer.OrdinalIgnoreCase);
+
     public DatabaseSyncService(
         string sourceConnectionString,
         string targetConnectionString,
@@ -332,6 +335,31 @@ public class DatabaseSyncService : IDatabaseSyncService
             _runResult.EndTime = DateTime.UtcNow;
             await SaveResultFileAsync();
             return;
+        }
+
+        // Map start row offsets from positional list to table names
+        // The offsets list matches the order of tables selected
+        _startRowOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (parameters?.StartRowOffsets != null && parameters.StartRowOffsets.Count > 0)
+        {
+            var offsetsList = parameters.StartRowOffsets;
+            for (int i = 0; i < Math.Min(tablesToSync.Count, offsetsList.Count); i++)
+            {
+                var tableName = $"{tablesToSync[i].SchemaName}.{tablesToSync[i].TableName}";
+                _startRowOffsets[tableName] = offsetsList[i];
+                
+                if (offsetsList[i] > 0)
+                {
+                    AnsiConsole.MarkupLine($"[gray]→ Table {Markup.Escape(tableName)} will skip first {offsetsList[i]:N0} rows[/]");
+                }
+            }
+            
+            // Log warning if counts don't match
+            if (offsetsList.Count != tablesToSync.Count)
+            {
+                AnsiConsole.MarkupLine($"[yellow]⚠ Warning: {offsetsList.Count} start row offset(s) provided but {tablesToSync.Count} table(s) to sync. Extra offsets ignored, missing offsets default to 0.[/]");
+            }
+            AnsiConsole.WriteLine();
         }
 
         AnsiConsole.WriteLine($"Found {tablesToSync.Count} tables to sync.\n");
@@ -928,7 +956,37 @@ public class DatabaseSyncService : IDatabaseSyncService
         progressTask?.Description($"[cyan]{GetDisplayName(tableName)}[/] [gray]Source: {sourceCount:N0} | Target: {targetCount:N0}[/]");
 
         // 3. Sync Batches (normal mode)
-        int offset = 0;
+        // Get start row offset for this table if specified
+        int startRowOffset = 0;
+        if (_startRowOffsets.TryGetValue(tableName, out int configuredOffset))
+        {
+            startRowOffset = configuredOffset;
+            tableResult.StartRowOffset = startRowOffset;
+            
+            if (startRowOffset > 0)
+            {
+                if (startRowOffset >= sourceCount)
+                {
+                    // Start offset is beyond the total records - nothing to sync
+                    stopwatch.Stop();
+                    tableResult.Status = "Completed";
+                    tableResult.Inserted = 0;
+                    tableResult.Skipped = 0;
+                    tableResult.EndTime = DateTime.UtcNow;
+                    tableResult.DurationSeconds = stopwatch.Elapsed.TotalSeconds;
+                    lock (_resultLock)
+                    {
+                        _runResult?.AddOrUpdateTable(tableResult);
+                    }
+                    await SaveResultFileAsync();
+                    return;
+                }
+                
+                AnsiConsole.MarkupLine($"[gray]  → Starting from row {startRowOffset:N0} (skipping first {startRowOffset:N0} rows)[/]");
+            }
+        }
+        
+        int offset = startRowOffset;
         int totalInserted = 0;
         int totalSkipped = 0;
 

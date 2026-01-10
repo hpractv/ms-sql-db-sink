@@ -53,6 +53,13 @@ public class SyncParameters
     /// Ignored columns: TableName -> Set of Column Names to ignore
     /// </summary>
     public Dictionary<string, HashSet<string>> IgnoredColumns { get; set; } = new();
+
+    /// <summary>
+    /// Start row offsets: List of starting row numbers (skip first N records) in table selection order
+    /// Used for resuming failed syncs from a specific row number
+    /// The list order matches the order of tables being synced
+    /// </summary>
+    public List<int> StartRowOffsets { get; set; } = new();
 }
 
 public class TableSyncResult
@@ -70,6 +77,7 @@ public class TableSyncResult
     public DateTime? StartTime { get; set; }
     public DateTime? EndTime { get; set; }
     public SchemaErrors? SchemaErrors { get; set; }
+    public int StartRowOffset { get; set; } // Number of rows skipped at the start of the sync
 }
 
 public class SchemaErrors
