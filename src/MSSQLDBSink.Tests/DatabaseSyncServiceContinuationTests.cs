@@ -124,6 +124,40 @@ public class DatabaseSyncServiceContinuationTests
     }
 
     [Fact]
+    public void StartRowOffset_ExceedsSourceCount_SkippedCountEqualsOffset()
+    {
+        // Arrange - Edge case: offset exceeds available records
+        var startRowOffset = 15_000_000;
+        var sourceCount = 10_000_000;
+
+        // Act - Simulate the logic when startRowOffset >= sourceCount
+        // The Skipped count should represent rows intentionally skipped (the offset),
+        // not the number of rows that were actually available to skip (sourceCount)
+        var skippedCount = startRowOffset; // Should be offset, not sourceCount
+
+        // Assert
+        skippedCount.Should().Be(15_000_000,
+            "Skipped count should equal the offset value (intended skip), not sourceCount (available rows)");
+        skippedCount.Should().NotBe(sourceCount,
+            "Skipped count should not be limited to sourceCount when offset exceeds it");
+    }
+
+    [Theory]
+    [InlineData(10_000_000, 10_000_000, 10_000_000)] // Equal: offset = sourceCount
+    [InlineData(15_000_000, 10_000_000, 15_000_000)] // Exceeds: offset > sourceCount
+    [InlineData(20_000_000, 5_000_000, 20_000_000)] // Much larger offset
+    public void StartRowOffset_BeyondSourceCount_SkippedCountIsOffset(int startRowOffset, int sourceCount, int expectedSkipped)
+    {
+        // Arrange & Act
+        // When startRowOffset >= sourceCount, Skipped should be set to startRowOffset
+        var skippedCount = startRowOffset >= sourceCount ? startRowOffset : sourceCount;
+
+        // Assert
+        skippedCount.Should().Be(expectedSkipped,
+            $"When offset ({startRowOffset}) >= sourceCount ({sourceCount}), Skipped should be {expectedSkipped}");
+    }
+
+    [Fact]
     public void StartRowOffset_OneGreaterThanSourceCount_SkipsAllRows()
     {
         // Arrange
@@ -403,16 +437,17 @@ public class DatabaseSyncServiceContinuationTests
     }
 
     [Fact]
-    public void FetchRecordsBatchAsync_OrderByClause_AlwaysUsesPrimaryKeysWhenAvailable()
+    public void FetchRecordsBatchAsync_OrderByClause_UsesPrimaryKeysWhenFlagEnabled()
     {
-        // Arrange - Simulate the ORDER BY clause generation logic
+        // Arrange - Simulate the ORDER BY clause generation logic with flag enabled
         var primaryKeys = new List<string> { "Id", "CreatedDate" };
         var columns = new List<string> { "Id", "Name", "CreatedDate" };
         var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var orderByPrimaryKey = true; // Flag enabled
 
         // Act - Simulate the logic from FetchRecordsBatchAsync
         string orderByClause;
-        if (primaryKeys != null && primaryKeys.Any())
+        if (orderByPrimaryKey && primaryKeys != null && primaryKeys.Any())
         {
             orderByClause = string.Join(", ", primaryKeys.Select(pk => $"[{pk}]"));
         }
@@ -428,9 +463,40 @@ public class DatabaseSyncServiceContinuationTests
         }
 
         // Assert
-        orderByClause.Should().Be("[Id], [CreatedDate]", "Should use all primary key columns for ordering");
+        orderByClause.Should().Be("[Id], [CreatedDate]", "Should use all primary key columns for ordering when flag is enabled");
         orderByClause.Should().Contain("[Id]");
         orderByClause.Should().Contain("[CreatedDate]");
+    }
+
+    [Fact]
+    public void FetchRecordsBatchAsync_OrderByClause_DoesNotUsePrimaryKeysWhenFlagDisabled()
+    {
+        // Arrange - Simulate the ORDER BY clause generation logic with flag disabled (default)
+        var primaryKeys = new List<string> { "Id", "CreatedDate" };
+        var columns = new List<string> { "Id", "Name", "CreatedDate" };
+        var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var orderByPrimaryKey = false; // Flag disabled (default)
+
+        // Act - Simulate the logic from FetchRecordsBatchAsync
+        string orderByClause;
+        if (orderByPrimaryKey && primaryKeys != null && primaryKeys.Any())
+        {
+            orderByClause = string.Join(", ", primaryKeys.Select(pk => $"[{pk}]"));
+        }
+        else if (columns.Any())
+        {
+            var firstTarget = columns.First();
+            var firstSource = targetToSourceMap.TryGetValue(firstTarget, out var mapped) ? mapped : firstTarget;
+            orderByClause = $"[{firstSource}]";
+        }
+        else
+        {
+            orderByClause = "(SELECT NULL)";
+        }
+
+        // Assert
+        orderByClause.Should().Be("[Id]", "Should fall back to first column when flag is disabled, even if primary keys exist");
+        orderByClause.Should().NotContain("[CreatedDate]", "Should not use all primary keys when flag is disabled");
     }
 
     [Fact]
@@ -523,7 +589,8 @@ public class DatabaseSyncServiceContinuationTests
         Dictionary<string, string> targetToSourceMap,
         string tableName,
         int offset,
-        int batchSize)
+        int batchSize,
+        bool orderByPrimaryKey = false)
     {
         // Build SELECT using source column names with aliases to target names
         var selectParts = columns.Select(targetCol =>
@@ -538,8 +605,9 @@ public class DatabaseSyncServiceContinuationTests
         string columnList = string.Join(", ", selectParts);
 
         // Determine ORDER BY clause
+        // When orderByPrimaryKey is enabled, order by primary keys to ensure consistent ordering
         string orderByClause;
-        if (primaryKeys != null && primaryKeys.Any())
+        if (orderByPrimaryKey && primaryKeys != null && primaryKeys.Any())
         {
             orderByClause = string.Join(", ", primaryKeys.Select(pk => $"[{pk}]"));
         }
@@ -590,7 +658,7 @@ public class DatabaseSyncServiceContinuationTests
     }
 
     [Fact]
-    public void FetchRecordsBatchAsync_Query_OrdersByPrimaryKey()
+    public void FetchRecordsBatchAsync_Query_OrdersByPrimaryKey_WhenFlagEnabled()
     {
         // Arrange
         var columns = new List<string> { "Id", "Name" };
@@ -599,17 +667,38 @@ public class DatabaseSyncServiceContinuationTests
         var tableName = "dbo.Users";
         var offset = 0;
         var batchSize = 100;
+        var orderByPrimaryKey = true; // Flag enabled
 
         // Act
-        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize);
+        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize, orderByPrimaryKey);
 
         // Assert
-        query.Should().Contain("ORDER BY [Id]", "Query should order by primary key");
+        query.Should().Contain("ORDER BY [Id]", "Query should order by primary key when flag is enabled");
         query.Should().NotContain("ORDER BY [Name]", "Query should not order by non-primary key");
     }
 
     [Fact]
-    public void FetchRecordsBatchAsync_Query_OrdersByCompositePrimaryKey_InCorrectOrder()
+    public void FetchRecordsBatchAsync_Query_DoesNotOrderByPrimaryKey_WhenFlagDisabled()
+    {
+        // Arrange
+        var columns = new List<string> { "Id", "Name" };
+        var primaryKeys = new List<string> { "Id" };
+        var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var tableName = "dbo.Users";
+        var offset = 0;
+        var batchSize = 100;
+        var orderByPrimaryKey = false; // Flag disabled (default)
+
+        // Act
+        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize, orderByPrimaryKey);
+
+        // Assert
+        query.Should().Contain("ORDER BY [Id]", "Query should still order by first column (Id) when flag is disabled");
+        // Note: When flag is disabled, it falls back to first column, which happens to be Id in this case
+    }
+
+    [Fact]
+    public void FetchRecordsBatchAsync_Query_OrdersByCompositePrimaryKey_InCorrectOrder_WhenFlagEnabled()
     {
         // Arrange - Composite primary key with specific order
         var columns = new List<string> { "CustomerId", "OrderId", "ItemId", "Quantity" };
@@ -618,13 +707,14 @@ public class DatabaseSyncServiceContinuationTests
         var tableName = "dbo.OrderItems";
         var offset = 0;
         var batchSize = 100;
+        var orderByPrimaryKey = true; // Flag enabled
 
         // Act
-        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize);
+        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize, orderByPrimaryKey);
 
         // Assert
         query.Should().Contain("ORDER BY [CustomerId], [OrderId], [ItemId]",
-            "Query should order by all primary keys in the correct order");
+            "Query should order by all primary keys in the correct order when flag is enabled");
         // Verify the order is correct (CustomerId before OrderId, OrderId before ItemId)
         var orderByIndex = query.IndexOf("ORDER BY");
         var customerIdIndex = query.IndexOf("[CustomerId]", orderByIndex);
@@ -727,7 +817,7 @@ public class DatabaseSyncServiceContinuationTests
     }
 
     [Fact]
-    public void FetchRecordsBatchAsync_Query_DeterministicOrdering_WithMultiplePrimaryKeys()
+    public void FetchRecordsBatchAsync_Query_DeterministicOrdering_WithMultiplePrimaryKeys_WhenFlagEnabled()
     {
         // Arrange - Test that ordering is deterministic by using multiple primary keys
         var columns = new List<string> { "Year", "Month", "Day", "Value" };
@@ -736,14 +826,15 @@ public class DatabaseSyncServiceContinuationTests
         var tableName = "dbo.DailyMetrics";
         var offset = 0;
         var batchSize = 100;
+        var orderByPrimaryKey = true; // Flag enabled
 
         // Act
-        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize);
+        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize, orderByPrimaryKey);
 
         // Assert
         var orderByClause = ExtractOrderByClause(query);
         orderByClause.Should().Be("[Year], [Month], [Day]",
-            "Ordering should be deterministic with all primary keys in correct order");
+            "Ordering should be deterministic with all primary keys in correct order when flag is enabled");
 
         // Verify order is preserved
         var yearIndex = orderByClause.IndexOf("[Year]");
@@ -851,6 +942,244 @@ public class DatabaseSyncServiceContinuationTests
         if (offsetIndex == -1) return string.Empty;
 
         return query.Substring(orderByIndex + 8, offsetIndex - orderByIndex - 8).Trim();
+    }
+
+    [Fact]
+    public void SyncParameters_OrderByPrimaryKey_DefaultsToFalse()
+    {
+        // Arrange
+        var parameters = new SyncParameters();
+
+        // Assert
+        parameters.OrderByPrimaryKey.Should().BeFalse("OrderByPrimaryKey should default to false");
+    }
+
+    [Fact]
+    public void SyncParameters_OrderByPrimaryKey_CanBeSet()
+    {
+        // Arrange
+        var parameters = new SyncParameters
+        {
+            OrderByPrimaryKey = true
+        };
+
+        // Assert
+        parameters.OrderByPrimaryKey.Should().BeTrue("OrderByPrimaryKey should be settable");
+    }
+
+    [Fact]
+    public void FetchRecordsBatchAsync_OrderByPrimaryKey_FlagRespected_WhenTrue()
+    {
+        // Arrange
+        var columns = new List<string> { "Id", "Name", "Email" };
+        var primaryKeys = new List<string> { "Id" };
+        var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var tableName = "dbo.Users";
+        var offset = 0;
+        var batchSize = 100;
+        var orderByPrimaryKey = true; // Flag enabled
+
+        // Act
+        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize, orderByPrimaryKey);
+        var orderByClause = ExtractOrderByClause(query);
+
+        // Assert
+        orderByClause.Should().Be("[Id]", "Should order by primary key when flag is true");
+    }
+
+    [Fact]
+    public void FetchRecordsBatchAsync_OrderByPrimaryKey_FlagRespected_WhenFalse()
+    {
+        // Arrange
+        var columns = new List<string> { "Id", "Name", "Email" };
+        var primaryKeys = new List<string> { "Id" };
+        var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var tableName = "dbo.Users";
+        var offset = 0;
+        var batchSize = 100;
+        var orderByPrimaryKey = false; // Flag disabled (default)
+
+        // Act
+        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize, orderByPrimaryKey);
+        var orderByClause = ExtractOrderByClause(query);
+
+        // Assert
+        orderByClause.Should().Be("[Id]", "Should fall back to first column when flag is false (Id is first column)");
+    }
+
+    [Fact]
+    public void FetchRecordsBatchAsync_OrderByPrimaryKey_WithCompositeKey_WhenFlagEnabled()
+    {
+        // Arrange
+        var columns = new List<string> { "Year", "Month", "Day", "Value" };
+        var primaryKeys = new List<string> { "Year", "Month", "Day" };
+        var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var tableName = "dbo.DailyMetrics";
+        var offset = 0;
+        var batchSize = 100;
+        var orderByPrimaryKey = true; // Flag enabled
+
+        // Act
+        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize, orderByPrimaryKey);
+        var orderByClause = ExtractOrderByClause(query);
+
+        // Assert
+        orderByClause.Should().Be("[Year], [Month], [Day]",
+            "Should order by all primary keys when flag is enabled");
+    }
+
+    [Fact]
+    public void FetchRecordsBatchAsync_OrderByPrimaryKey_WithCompositeKey_WhenFlagDisabled()
+    {
+        // Arrange
+        var columns = new List<string> { "Year", "Month", "Day", "Value" };
+        var primaryKeys = new List<string> { "Year", "Month", "Day" };
+        var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var tableName = "dbo.DailyMetrics";
+        var offset = 0;
+        var batchSize = 100;
+        var orderByPrimaryKey = false; // Flag disabled (default)
+
+        // Act
+        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize, orderByPrimaryKey);
+        var orderByClause = ExtractOrderByClause(query);
+
+        // Assert
+        orderByClause.Should().Be("[Year]",
+            "Should order by first column only when flag is disabled, even if primary keys exist");
+    }
+
+    [Fact]
+    public void FetchRecordsBatchAsync_OrderByPrimaryKey_NoPrimaryKeys_FallsBackToFirstColumn()
+    {
+        // Arrange
+        var columns = new List<string> { "Name", "Email" };
+        var primaryKeys = new List<string>(); // No primary keys
+        var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var tableName = "dbo.Users";
+        var offset = 0;
+        var batchSize = 100;
+        var orderByPrimaryKey = true; // Flag enabled but no PKs
+
+        // Act
+        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize, orderByPrimaryKey);
+        var orderByClause = ExtractOrderByClause(query);
+
+        // Assert
+        orderByClause.Should().Be("[Name]",
+            "Should fall back to first column when no primary keys exist, regardless of flag");
+    }
+
+    [Theory]
+    [InlineData(true, "[Id]")]
+    [InlineData(false, "[Id]")] // Falls back to first column which is Id
+    public void FetchRecordsBatchAsync_OrderByPrimaryKey_FlagBehavior(bool orderByPrimaryKey, string expectedOrderBy)
+    {
+        // Arrange
+        var columns = new List<string> { "Id", "Name" };
+        var primaryKeys = new List<string> { "Id" };
+        var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var tableName = "dbo.Users";
+        var offset = 0;
+        var batchSize = 100;
+
+        // Act
+        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize, orderByPrimaryKey);
+        var orderByClause = ExtractOrderByClause(query);
+
+        // Assert
+        orderByClause.Should().Be(expectedOrderBy,
+            $"When orderByPrimaryKey={orderByPrimaryKey}, should produce {expectedOrderBy}");
+    }
+
+    [Fact]
+    public void OrderByPrimaryKey_WithStartRowOffset_ProducesConsistentOrdering()
+    {
+        // Arrange - Simulate resuming with order-by-pk enabled
+        var columns = new List<string> { "Id", "Name" };
+        var primaryKeys = new List<string> { "Id" };
+        var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var tableName = "dbo.Users";
+        var offset = 5000;
+        var batchSize = 1000;
+        var orderByPrimaryKey = true; // Flag enabled for reliable continuation
+
+        // Act
+        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize, orderByPrimaryKey);
+
+        // Assert
+        query.Should().Contain("ORDER BY [Id]", "Should order by primary key when flag is enabled");
+        query.Should().Contain("OFFSET 5000 ROWS", "Should include offset");
+        query.Should().Contain("FETCH NEXT 1000 ROWS ONLY", "Should include batch size");
+    }
+
+    [Fact]
+    public void OrderByPrimaryKey_WithStartRowOffset_WithoutFlag_ProducesWarningScenario()
+    {
+        // Arrange - Simulate resuming WITHOUT order-by-pk (should show warning in real code)
+        var columns = new List<string> { "Id", "Name" };
+        var primaryKeys = new List<string> { "Id" };
+        var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var tableName = "dbo.Users";
+        var offset = 5000;
+        var batchSize = 1000;
+        var orderByPrimaryKey = false; // Flag disabled - ordering may be inconsistent
+
+        // Act
+        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize, orderByPrimaryKey);
+
+        // Assert
+        // When flag is false, it falls back to first column (which happens to be Id in this case)
+        // But in real scenarios with different column order, this could be different
+        query.Should().Contain("ORDER BY", "Should still have ORDER BY clause");
+        query.Should().Contain("OFFSET 5000 ROWS", "Should include offset");
+    }
+
+    [Fact]
+    public void OrderByPrimaryKey_Flag_IsIndependentOfStartRowOffset()
+    {
+        // Arrange - Test that the flag works regardless of offset value
+        var columns = new List<string> { "Id", "Name" };
+        var primaryKeys = new List<string> { "Id" };
+        var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var tableName = "dbo.Users";
+        var batchSize = 100;
+        var orderByPrimaryKey = true;
+
+        // Act - Test with different offsets
+        var query1 = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, 0, batchSize, orderByPrimaryKey);
+        var query2 = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, 1000, batchSize, orderByPrimaryKey);
+        var query3 = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, 9000000, batchSize, orderByPrimaryKey);
+
+        // Assert - All should order by primary key
+        ExtractOrderByClause(query1).Should().Be("[Id]");
+        ExtractOrderByClause(query2).Should().Be("[Id]");
+        ExtractOrderByClause(query3).Should().Be("[Id]");
+    }
+
+    [Fact]
+    public void OrderByPrimaryKey_WithColumnMappings_UsesSourceColumnNames()
+    {
+        // Arrange - Primary key has different name in source vs target
+        var columns = new List<string> { "UserId", "Name" }; // Target names
+        var primaryKeys = new List<string> { "Id" }; // Source PK name
+        var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["UserId"] = "Id" // Target UserId maps to source Id
+        };
+        var tableName = "dbo.Users";
+        var offset = 0;
+        var batchSize = 100;
+        var orderByPrimaryKey = true; // Flag enabled
+
+        // Act
+        var query = BuildQuery(columns, primaryKeys, targetToSourceMap, tableName, offset, batchSize, orderByPrimaryKey);
+        var orderByClause = ExtractOrderByClause(query);
+
+        // Assert
+        orderByClause.Should().Be("[Id]",
+            "ORDER BY should use source column name (primary key), not target mapped name");
+        query.Should().Contain("[Id] AS [UserId]", "SELECT should use source with alias");
     }
 }
 

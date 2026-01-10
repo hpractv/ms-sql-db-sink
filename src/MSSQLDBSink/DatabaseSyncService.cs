@@ -34,6 +34,9 @@ public class DatabaseSyncService : IDatabaseSyncService
     // Start row offsets: TableName -> Starting row number to skip
     private Dictionary<string, int> _startRowOffsets = new(StringComparer.OrdinalIgnoreCase);
 
+    // Order source data by primary keys for consistent continuation
+    private bool _orderByPrimaryKey = false;
+
     public DatabaseSyncService(
         string sourceConnectionString,
         string targetConnectionString,
@@ -323,6 +326,8 @@ public class DatabaseSyncService : IDatabaseSyncService
         _columnMappings = parameters?.ColumnMappings ?? new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
         // Store ignored columns from parameters
         _ignoredColumns = parameters?.IgnoredColumns ?? new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        // Store order by primary key flag from parameters
+        _orderByPrimaryKey = parameters?.OrderByPrimaryKey ?? false;
 
         AnsiConsole.WriteLine("Fetching list of tables from source database...");
 
@@ -971,7 +976,7 @@ public class DatabaseSyncService : IDatabaseSyncService
                     stopwatch.Stop();
                     tableResult.Status = "Completed";
                     tableResult.Inserted = 0;
-                    tableResult.Skipped = sourceCount; // All source records are effectively skipped
+                    tableResult.Skipped = startRowOffset; // Skipped count represents rows intentionally skipped due to offset
                     tableResult.EndTime = DateTime.UtcNow;
                     tableResult.DurationSeconds = stopwatch.Elapsed.TotalSeconds;
                     lock (_resultLock)
@@ -982,14 +987,18 @@ public class DatabaseSyncService : IDatabaseSyncService
                     return;
                 }
 
-                // Validate that we have primary keys for consistent ordering (required for continuation)
-                if (!primaryKeys.Any())
+                // Validate that we have primary keys and ordering enabled for consistent ordering (required for continuation)
+                if (!_orderByPrimaryKey)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]⚠ Warning:[/] Start row offset specified for {GetDisplayName(tableName)} but --order-by-pk is not enabled. Ordering may be inconsistent between runs. Use --order-by-pk for reliable continuation.");
+                }
+                else if (!primaryKeys.Any())
                 {
                     AnsiConsole.MarkupLine($"[yellow]⚠ Warning:[/] Start row offset specified for {GetDisplayName(tableName)} but no primary keys found. Ordering may be inconsistent between runs.");
                 }
 
-                // Log that we're using primary key ordering for continuation
-                if (primaryKeys.Any())
+                // Log that we're using primary key ordering for continuation (if enabled)
+                if (_orderByPrimaryKey && primaryKeys.Any())
                 {
                     var pkList = string.Join(", ", primaryKeys);
                     AnsiConsole.MarkupLine($"[gray]  → Starting from row {startRowOffset:N0} (skipping first {startRowOffset:N0} rows, ordered by: {Markup.Escape(pkList)})[/]");
@@ -1649,11 +1658,12 @@ public class DatabaseSyncService : IDatabaseSyncService
         string columnList = string.Join(", ", selectParts);
 
         // Determine ORDER BY clause
-        // CRITICAL: Always order by primary keys when available to ensure consistent ordering
+        // When --order-by-pk is enabled, order by primary keys to ensure consistent ordering
         // for continuation/resume functionality. Without consistent ordering, OFFSET won't
         // correspond to the same rows between runs.
+        // Defaults to false until next major version, then will default to true
         string orderByClause;
-        if (primaryKeys != null && primaryKeys.Any())
+        if (_orderByPrimaryKey && primaryKeys != null && primaryKeys.Any())
         {
             // Primary keys are in source column names (usually).
             // We need to make sure we use the source column names for sorting.

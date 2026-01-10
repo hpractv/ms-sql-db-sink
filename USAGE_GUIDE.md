@@ -74,6 +74,7 @@ Specific tables or schemas to sync. Can be a single name or a comma-separated li
 - `--ignore-column`: Skip specific columns (Format: `Table.Col` or `Col`)
 - `--map-column`: Map source to target column (Format: `Table.Source=Target`)
 - `--start-row <OFFSETS>`: Comma-separated starting row offsets for resuming syncs (e.g., "0,1000,500")
+- `--order-by-pk`: Order source data by primary keys for consistent continuation (default: false, will default to true in next major version)
 - `-o|--output-dir <DIR>`: Directory for JSON results (default: results)
 - `-?|-h|--help`: Show help
 
@@ -293,7 +294,8 @@ dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --ignore
 **Command:**
 ```bash
 # Resume: skip the completed Users table and the 5,000 Orders records already synced
-dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users,dbo.Orders,dbo.Products" --start-row "10000,5000,0"
+# IMPORTANT: Use --order-by-pk for reliable continuation
+dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users,dbo.Orders,dbo.Products" --start-row "10000,5000,0" --order-by-pk
 ```
 
 **Expected Result**:
@@ -301,7 +303,10 @@ dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users,dbo.Order
 - `dbo.Orders`: Starts from row 5,000 (resumes where it left off)
 - `dbo.Products`: Starts from row 0 (syncs all records)
 
-**Best Practice**: Check the JSON result files in the `results/` directory to determine exactly how many records were synced for each table before the failure.
+**Best Practices**:
+- **Always use `--order-by-pk` when resuming**: This ensures source data is ordered consistently by primary keys, making row offsets reliable. Without this flag, the ordering may be inconsistent between runs, causing incorrect row skipping.
+- Check the JSON result files in the `results/` directory to determine exactly how many records were synced for each table before the failure.
+- The `--order-by-pk` flag defaults to `false` in the current version but will default to `true` in the next major version for better reliability.
 
 ---
 
@@ -341,6 +346,7 @@ dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users,dbo.Order
 - Test on small tables first
 - Verify target schema matches source
 - Check that tables have primary keys (or use appropriate flags)
+- Use `--order-by-pk` when resuming failed syncs for consistent ordering
 - Monitor the console output
 - Review JSON result files for failed tables
 - Use result files to resume failed syncs

@@ -61,6 +61,9 @@ public class Program
     [Option("--start-row", Description = "Starting row number(s) to skip for each table. Comma-separated list matching table order (e.g., '0,1000,500' for 3 tables)")]
     public string? StartRow { get; set; }
 
+    [Option("--order-by-pk", Description = "Order source data by primary keys for consistent continuation (default: false, will default to true in next major version)")]
+    public bool OrderByPrimaryKey { get; set; }
+
     [Option("-o|--output-dir", Description = "Directory for saving JSON results (default: results)")]
     public string OutputDir { get; set; } = "results";
 
@@ -138,6 +141,7 @@ public class Program
         info.AddRow("[cyan]Ignored Columns[/]", IgnoreColumn?.Length > 0 ? $"{IgnoreColumn.Length} column(s)" : "[grey]None[/]");
         info.AddRow("[cyan]Column Mappings[/]", MapColumn?.Length > 0 ? $"{MapColumn.Length} mapping(s)" : "[grey]None[/]");
         info.AddRow("[cyan]Start Row Offsets[/]", !string.IsNullOrWhiteSpace(StartRow) ? StartRow : "[grey]None[/]");
+        info.AddRow("[cyan]Order By Primary Key[/]", OrderByPrimaryKey ? "[green]Yes[/]" : "[red]No[/]");
         info.AddRow("[cyan]Compare Counts & Schema[/]", CompareCountsAndSchema ? "[green]Yes[/]" : "[red]No[/]");
         info.AddRow("[cyan]Output Directory[/]", OutputDir);
         AnsiConsole.Write(info);
@@ -235,7 +239,8 @@ public class Program
                     TargetColumnsOnly = TargetColumnsOnly,
                     ColumnMappings = columnMappings,
                     IgnoredColumns = ignoredColumns,
-                    StartRowOffsets = startRowOffsets
+                    StartRowOffsets = startRowOffsets,
+                    OrderByPrimaryKey = OrderByPrimaryKey
                 };
 
                 await syncService.SyncTablesAsync(tableSelections, ThreadCount, parameters);
@@ -373,7 +378,7 @@ public class Program
             return result;
 
         var parts = startRow.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        
+
         foreach (var part in parts)
         {
             if (int.TryParse(part, out int offset))

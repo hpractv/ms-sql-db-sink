@@ -60,6 +60,12 @@ public class SyncParameters
     /// The list order matches the order of tables being synced
     /// </summary>
     public List<int> StartRowOffsets { get; set; } = new();
+
+    /// <summary>
+    /// Order source data by primary keys for consistent continuation
+    /// Defaults to false until next major version, then will default to true
+    /// </summary>
+    public bool OrderByPrimaryKey { get; set; }
 }
 
 public class TableSyncResult

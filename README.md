@@ -65,6 +65,7 @@ MSSQLDBSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [opt
 - `--deep-compare`: Use all columns as composite key for comparison (requires `--allow-no-pk`)
 - `--clear-target`: Truncate target table and bulk insert (fast, no comparison)
 - `--start-row <OFFSETS>`: Comma-separated list of starting row numbers to skip for each table (e.g., "0,1000,500")
+- `--order-by-pk`: Order source data by primary keys for consistent continuation (default: false, will default to true in next major version)
 - `-o|--output-dir <DIR>`: Directory for saving JSON results (default: results)
 - `-?|-h|--help`: Show help information
 
@@ -116,7 +117,7 @@ If a sync job fails partway through, you can resume by skipping already-processe
 
 ```bash
 # Sync 3 tables, but the second table already has 1000 records synced
-dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users,dbo.Orders,dbo.Products" --start-row "0,1000,0"
+dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users,dbo.Orders,dbo.Products" --start-row "0,1000,0" --order-by-pk
 ```
 
 This will:
@@ -124,7 +125,10 @@ This will:
 - Start syncing `dbo.Orders` from row 1000 (skip first 1000 records)
 - Start syncing `dbo.Products` from row 0 (beginning)
 
-**Note**: The order of row offsets must match the order of tables being synced.
+**Important Notes**:
+- The order of row offsets must match the order of tables being synced
+- **Use `--order-by-pk` for reliable continuation**: Without this flag, source data ordering may be inconsistent between runs, which can cause incorrect row skipping when resuming. The flag ensures deterministic ordering by primary keys.
+- The `--order-by-pk` flag defaults to `false` in the current version but will default to `true` in the next major version
 
 ## How It Works
 
