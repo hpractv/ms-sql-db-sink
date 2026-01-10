@@ -73,6 +73,7 @@ Specific tables or schemas to sync. Can be a single name or a comma-separated li
 - `--target-columns-only`: Import only columns that exist in target
 - `--ignore-column`: Skip specific columns (Format: `Table.Col` or `Col`)
 - `--map-column`: Map source to target column (Format: `Table.Source=Target`)
+- `--start-row <OFFSETS>`: Comma-separated starting row offsets for resuming syncs (e.g., "0,1000,500")
 - `-o|--output-dir <DIR>`: Directory for JSON results (default: results)
 - `-?|-h|--help`: Show help
 
@@ -280,6 +281,27 @@ dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --ignore
 **Expected Result**:
 - `dbo.Users` is synced.
 - `PasswordHash` and `LastLoginIP` columns are completely ignored (not selected from source, not inserted into target).
+
+---
+
+### Scenario 9: Resuming a Failed Sync
+
+**Goal**: Resume a sync job that failed after partially completing some tables.
+
+**Background**: You started syncing three tables (`dbo.Users`, `dbo.Orders`, `dbo.Products`). The sync completed `dbo.Users` fully (10,000 records), got halfway through `dbo.Orders` (synced 5,000 out of 10,000 records), and hadn't started `dbo.Products` yet before it failed.
+
+**Command:**
+```bash
+# Resume: skip the completed Users table and the 5,000 Orders records already synced
+dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users,dbo.Orders,dbo.Products" --start-row "10000,5000,0"
+```
+
+**Expected Result**:
+- `dbo.Users`: Skips first 10,000 rows (already synced, likely finds no new records)
+- `dbo.Orders`: Starts from row 5,000 (resumes where it left off)
+- `dbo.Products`: Starts from row 0 (syncs all records)
+
+**Best Practice**: Check the JSON result files in the `results/` directory to determine exactly how many records were synced for each table before the failure.
 
 ---
 

@@ -64,6 +64,7 @@ MSSQLDBSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [opt
 - `--allow-no-pk`: Allow processing tables without primary keys
 - `--deep-compare`: Use all columns as composite key for comparison (requires `--allow-no-pk`)
 - `--clear-target`: Truncate target table and bulk insert (fast, no comparison)
+- `--start-row <OFFSETS>`: Comma-separated list of starting row numbers to skip for each table (e.g., "0,1000,500")
 - `-o|--output-dir <DIR>`: Directory for saving JSON results (default: results)
 - `-?|-h|--help`: Show help information
 
@@ -108,6 +109,22 @@ dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --clear-
 ```bash
 dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Logs" --allow-no-pk --deep-compare
 ```
+
+#### Resume Sync with Start Row Offsets
+
+If a sync job fails partway through, you can resume by skipping already-processed records:
+
+```bash
+# Sync 3 tables, but the second table already has 1000 records synced
+dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users,dbo.Orders,dbo.Products" --start-row "0,1000,0"
+```
+
+This will:
+- Start syncing `dbo.Users` from row 0 (beginning)
+- Start syncing `dbo.Orders` from row 1000 (skip first 1000 records)
+- Start syncing `dbo.Products` from row 0 (beginning)
+
+**Note**: The order of row offsets must match the order of tables being synced.
 
 ## How It Works
 
