@@ -2,6 +2,15 @@
 
 This folder contains detailed documentation for the MSSQLDBSink project.
 
+## 🔄 Wiki Synchronization
+
+This `wiki/` folder is automatically synced to the GitHub wiki at `https://github.com/hpractv/ms-sql-db-sink/wiki` via GitHub Actions. Any changes pushed to the main branch will automatically update the public wiki.
+
+**To update the wiki:**
+1. Edit files in this folder
+2. Commit and push to main
+3. The sync happens automatically via GitHub Actions
+
 ## 📚 Documentation Files
 
 - **[Home.md](Home.md)** - Wiki home page with overview and navigation links
