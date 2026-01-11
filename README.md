@@ -10,6 +10,8 @@ This project intends to be the "kitchen sink" solution for transferring SQL Serv
 
 ## 📚 Documentation
 
+For comprehensive documentation, visit the **[GitHub Wiki](https://github.com/hpractv/ms-sql-db-sink/wiki)** or browse the documentation files directly:
+
 - **[Usage Guide](wiki/Usage-Guide.md)** - Comprehensive usage examples, scenarios, and best practices
 - **[Project Summary](wiki/Project-Summary.md)** - Technical architecture and implementation details
 

@@ -14,29 +14,32 @@ jobs:
   sync-wiki:
     name: Sync Wiki to GitHub Wiki
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
       - name: Sync to GitHub Wiki
         run: |
           # Configure git
           git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
+          git config --global user.email \
+            "github-actions[bot]@users.noreply.github.com"
+
           # Clone the wiki repository
-          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki-repo
-          
+          WIKI_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}"
+          WIKI_URL="${WIKI_URL}@github.com/${{ github.repository }}.wiki.git"
+          git clone "$WIKI_URL" wiki-repo
+
           # Copy wiki files
           rsync -av --delete --exclude='.git' wiki/ wiki-repo/
-          
+
           # Commit and push changes
           cd wiki-repo
           git add .
-          
+
           # Check if there are changes to commit
           if git diff --staged --quiet; then
             echo "No changes to wiki"
@@ -45,3 +48,4 @@ jobs:
             git push origin master
             echo "Wiki synced successfully"
           fi
+
