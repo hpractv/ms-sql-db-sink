@@ -33,8 +33,9 @@ jobs:
           WIKI_URL="${WIKI_URL}@github.com/${{ github.repository }}.wiki.git"
           git clone "$WIKI_URL" wiki-repo
 
-          # Copy wiki files
-          rsync -av --delete --exclude='.git' wiki/ wiki-repo/
+          # Copy wiki files (exclude README.md as it's for local reference)
+          rsync -av --delete --exclude='.git' --exclude='README.md' \
+            wiki/ wiki-repo/
 
           # Commit and push changes
           cd wiki-repo
@@ -48,4 +49,3 @@ jobs:
             git push origin master
             echo "Wiki synced successfully"
           fi
-
