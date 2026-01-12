@@ -881,7 +881,7 @@ public class DatabaseSyncService : IDatabaseSyncService
         progressTask?.Description($"[cyan]{GetDisplayName(tableName)}[/] [gray]Source: {sourceCount:N0} | Target: {targetCount:N0}[/]");
 
         // 3. Sync Batches (normal mode)
-        int offset = 0;
+        int offset = targetCount;
         int totalInserted = 0;
         int totalSkipped = 0;
 
@@ -1542,14 +1542,20 @@ public class DatabaseSyncService : IDatabaseSyncService
             orderByClause = "(SELECT NULL)";
         }
 
-        string query = $@"
-            SELECT {columnList}
-            FROM {tableName}
-            ORDER BY {orderByClause}
-            OFFSET {offset} ROWS
-            FETCH NEXT {batchSize} ROWS ONLY";
+        // Build outer select list (just the target column names)
+        // Since inside the CTE we already aliased them to target names
+        var outerSelectList = string.Join(", ", columns.Select(c => $"[{c}]"));
 
-        var records = await connection.QueryAsync(query, commandTimeout: _commandTimeout);
+        string query = $@"
+            WITH OrderedData AS (
+                SELECT {columnList}, ROW_NUMBER() OVER (ORDER BY {orderByClause}) AS [__rn]
+                FROM {tableName}
+            )
+            SELECT {outerSelectList}
+            FROM OrderedData
+            WHERE [__rn] > @Offset AND [__rn] <= @Offset + @BatchSize";
+
+        var records = await connection.QueryAsync(query, new { Offset = offset, BatchSize = batchSize }, commandTimeout: _commandTimeout);
 
         return records.Select(record =>
         {
