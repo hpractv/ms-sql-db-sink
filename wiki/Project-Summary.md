@@ -103,6 +103,7 @@ dotnet run --project src/MSSQLDBSink/MSSQLDBSink.csproj -- "source.database.wind
    - Real-time console output with Spectre.Console
    - JSON result files with full run details
    - Enables manual resume by identifying failed tables
+   - Optional primary key ordering for consistent continuation (`--order-by-pk`)
 
 ## 📦 Dependencies
 
@@ -126,6 +127,7 @@ dotnet run --project src/MSSQLDBSink/MSSQLDBSink.csproj -- "source.database.wind
    - Identifies tables to sync based on selection criteria
    - Retrieves primary key columns (or uses all columns for deep compare)
    - Counts records in both databases
+   - Optionally orders source data by primary keys when `--order-by-pk` is enabled
 
 3. **Optimization Phase**
    - Compares source and target counts
