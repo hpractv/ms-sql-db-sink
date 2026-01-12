@@ -8,6 +8,13 @@ This project intends to be the "kitchen sink" solution for transferring SQL Serv
 > **WARNING: USE AT YOUR OWN RISK. ALWAYS BACK UP YOUR DATA BEFORE USING THIS TOOL.**
 > This tool modifies data in the target database. While checks are in place and the tool detects primary keys to avoid duplicates, data loss or corruption is possible if used incorrectly or if unexpected errors occur. The authors provide no warranty or guarantee.
 
+## 📚 Documentation
+
+For comprehensive documentation, visit the **[GitHub Wiki](https://github.com/hpractv/ms-sql-db-sink/wiki)** or browse the documentation files directly:
+
+- **[Usage Guide](wiki/Usage-Guide.md)** - Comprehensive usage examples, scenarios, and best practices
+- **[Project Summary](wiki/Project-Summary.md)** - Technical architecture and implementation details
+
 ## Features
 
 - ✅ **Smart Sync**: Only inserts records that don't exist in the target database (compares by primary keys)
@@ -32,6 +39,7 @@ This project intends to be the "kitchen sink" solution for transferring SQL Serv
 
 ## Installation
 
+### Option 1: Build from Source
 1. Clone or download this repository
 2. Navigate to the project directory
 3. Build the project:
@@ -39,12 +47,40 @@ This project intends to be the "kitchen sink" solution for transferring SQL Serv
    dotnet build
    ```
 
+### Option 2: Publish for Distribution
+1. Build and publish the application:
+   ```bash
+   dotnet publish -c Release -o ./publish
+   ```
+2. The compiled executable will be in the `publish` folder
+3. Run the executable directly:
+   ```bash
+   cd publish
+   ./MSSQLDBSink [arguments]
+   ```
+   Or on Windows:
+   ```cmd
+   cd publish
+   MSSQLDBSink.exe [arguments]
+   ```
+
 ## Usage
 
 ### Command Line Syntax
 
+Using the compiled executable:
 ```bash
-MSSQLDBSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
+./MSSQLDBSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
+```
+
+Or using the .NET CLI (from source):
+```bash
+dotnet run --project src/MSSQLDBSink/MSSQLDBSink.csproj -- [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
+```
+
+Or using the compiled DLL:
+```bash
+dotnet MSSQLDBSink.dll [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [options]
 ```
 
 ### Arguments
@@ -73,42 +109,55 @@ MSSQLDBSink [sourceServer] [sourceDb] [targetServer] [targetDb] [tableName] [opt
 
 When using server/database name arguments, the tool automatically uses **Azure Active Directory Interactive** authentication (supports MFA). When using connection strings, authentication is determined by the connection string.
 
+**Authentication Methods:**
+
+1. **Azure SQL** (`*.database.windows.net`):
+   - Uses **Azure Active Directory Default** authentication
+   - Tries: VS Creds → CLI (`az login`) → Env Vars → Managed Identity → Interactive Browser
+
+2. **Local / On-Prem SQL** (e.g., `localhost`, `MyServer`):
+   - Uses **Integrated Security** (Windows Authentication) by default
+   - Sets `TrustServerCertificate=True` and `Encrypt=False` for compatibility
+
+3. **Custom Connection Strings** (`--source-conn` / `--target-conn`):
+   - Uses exactly what you provide in the string
+
 ### Examples
 
 #### Sync a Single Table
 
 ```bash
-dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
+./MSSQLDBSink "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
 ```
 
 #### Sync Multiple Tables and Schemas
 
 ```bash
-dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users, Sales, HR.Employees"
+./MSSQLDBSink "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users, Sales, HR.Employees"
 ```
 
 #### Sync All Tables with Parallel Processing
 
 ```bash
-dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "all" --threads 4
+./MSSQLDBSink "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "all" --threads 4
 ```
 
 #### Using Connection Strings
 
 ```bash
-dotnet run -- --source-conn "Server=source...;Database=SourceDB;..." --target-conn "Server=target...;Database=TargetDB;..." "dbo.Users"
+./MSSQLDBSink --source-conn "Server=source...;Database=SourceDB;..." --target-conn "Server=target...;Database=TargetDB;..." "dbo.Users"
 ```
 
 #### Clear Target and Bulk Insert
 
 ```bash
-dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --clear-target
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --clear-target
 ```
 
 #### Sync Tables Without Primary Keys
 
 ```bash
-dotnet run -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Logs" --allow-no-pk --deep-compare
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Logs" --allow-no-pk --deep-compare
 ```
 
 #### Resume Sync with Start Row Offsets
@@ -147,6 +196,107 @@ The tool generates JSON result files in the output directory (default: `results/
 - All command-line parameters used
 - Per-table sync results (status, counts, duration, errors)
 - Enables manual resume by identifying failed/skipped tables
+
+## 🚀 Common Commands
+
+### Sync Single Table
+```bash
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users"
+```
+
+### Sync Multiple Tables/Schemas
+```bash
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users, Sales, HR.Employees"
+```
+
+### Sync All Tables
+```bash
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB"
+```
+
+### Sync with Options
+```bash
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --batch-size 2000 --threads 4
+```
+
+### Clear Target and Bulk Insert
+```bash
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" "dbo.Users" --clear-target
+```
+
+### Ignore Specific Columns
+```bash
+./MSSQLDBSink "source..." "SourceDB" "target..." "TargetDB" --ignore-column "PasswordHash" --ignore-column "Users.LastLogin"
+```
+
+### Using Connection Strings
+```bash
+./MSSQLDBSink --source-conn "Server=..." --target-conn "Server=..." "dbo.Users"
+```
+
+### Using PowerShell
+```powershell
+.\run-sync.ps1 -SourceServer "source..." -SourceDb "SourceDB" -TargetServer "target..." -TargetDb "TargetDB" -TableName "dbo.Users" -Threads 4
+```
+
+### Running from Source (Development)
+```bash
+dotnet run --project src/MSSQLDBSink/MSSQLDBSink.csproj -- "source..." "SourceDB" "target..." "TargetDB" "dbo.Users"
+```
+
+## Batch Size Guidelines
+
+| Record Size | Network Speed | Recommended Batch Size |
+|------------|---------------|----------------------|
+| Small      | Fast          | 2000-5000           |
+| Small      | Slow          | 500-1000            |
+| Large      | Fast          | 500-1000            |
+| Large      | Slow          | 100-500             |
+
+## Required Permissions
+
+**Source Database:**
+- SELECT on tables
+- VIEW DEFINITION
+
+**Target Database:**
+- INSERT on tables
+- VIEW DEFINITION
+- DELETE/TRUNCATE (if using `--clear-target`)
+
+## 📊 What It Does
+
+✅ Inserts records that don't exist in target  
+✅ Skips records that already exist  
+✅ Skips tables where target count >= source count  
+✅ Bulk inserts when `--clear-target` is used  
+❌ Does NOT update existing records (unless `--clear-target`)  
+❌ Does NOT delete records (unless `--clear-target`)  
+❌ Does NOT modify schemas
+
+## 🔑 Prerequisites
+
+- Target database must exist
+- Target tables must exist (same schema as source)
+- Tables typically need primary keys (use `--allow-no-pk --deep-compare` for tables without PKs)
+- Proper database permissions
+
+## 🐛 Quick Troubleshooting
+
+| Error              | Solution                           |
+| ------------------ | ---------------------------------- |
+| Connection timeout | Check firewall rules, whitelist IP |
+| Permission denied  | Grant SELECT/INSERT permissions    |
+| No primary key     | Use `--allow-no-pk --deep-compare` |
+| Duplicate key      | Check schema matches exactly       |
+| Target >= Source   | Use `--clear-target` to force sync |
+
+## 📞 Getting Help
+
+1. Review the **[Usage Guide](wiki/Usage-Guide.md)** for comprehensive examples and scenarios
+2. Check the **[Project Summary](wiki/Project-Summary.md)** for technical details
+3. Run with `--help` for all command-line options
+4. Review JSON result files in `results/` directory
 
 ## License
 

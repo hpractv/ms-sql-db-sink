@@ -4,36 +4,58 @@
 
 ```
 MSSQLDBSink/
-├── Program.cs                      # Main entry point and CLI argument handling
-├── DatabaseSyncService.cs          # Core sync logic and database operations
-├── AzureAdConnection.cs            # Azure AD Interactive connection logic
-├── SyncRunResult.cs                # Result models for JSON reporting
-├── MSSQLDBSink.csproj            # Project file with dependencies
-├── README.md                       # Comprehensive documentation
-├── .gitignore                      # Git ignore file
-├── run-sync.bat                    # Windows batch script for easy execution
-├── run-sync.ps1                    # PowerShell script for easy execution
-└── setup-env.example.bat          # Environment variable setup template
+├── src/
+│   ├── MSSQLDBSink/
+│   │   ├── Program.cs                      # Main entry point and CLI argument handling
+│   │   ├── DatabaseSyncService.cs          # Core sync logic and database operations
+│   │   ├── AzureAdConnection.cs            # Azure AD authentication logic
+│   │   ├── SyncRunResult.cs                # Result models for JSON reporting
+│   │   └── MSSQLDBSink.csproj            # Project file with dependencies
+│   └── MSSQLDBSink.Tests/                  # Unit tests
+├── wiki/                                   # Detailed documentation
+│   ├── Project-Summary.md                  # This file
+│   └── Usage-Guide.md                      # Comprehensive usage guide
+├── README.md                               # Main documentation
+├── QUICK_REFERENCE.md                      # Quick command reference
+├── .gitignore                              # Git ignore file
+├── run-sync.bat                            # Windows batch script for easy execution
+├── run-sync.ps1                            # PowerShell script for easy execution
+└── setup-env.example.bat                   # Environment variable setup template
 ```
 
 ## 🚀 Quick Start
 
-### 1. Build the Project
+### 1. Build and Publish the Project
+
+#### Development Build
 ```bash
-cd MSSQLDBSink
+cd /path/to/MSSQLDBSink
 dotnet build
+```
+
+#### Production Release
+```bash
+dotnet publish -c Release -o ./publish
+cd publish
 ```
 
 ### 2. Run the Sync
 
-**Sync a single table:**
+**Using the compiled executable (Recommended):**
 ```bash
-dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
+# After publishing
+cd publish
+./MSSQLDBSink "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
 ```
 
-**Sync all tables:**
+**Using the DLL:**
 ```bash
-dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB"
+dotnet MSSQLDBSink.dll "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
+```
+
+**From source (Development):**
+```bash
+dotnet run --project src/MSSQLDBSink/MSSQLDBSink.csproj -- "source.database.windows.net" "SourceDB" "target.database.windows.net" "TargetDB" "dbo.Users"
 ```
 
 *Note: You will be prompted for Azure AD credentials when using server/database names.*
@@ -47,9 +69,10 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
    - Count optimization: skips tables where target >= source
 
 ### 2. **Modern Authentication**
-   - Uses **Azure Active Directory Interactive** authentication (when using server/db names)
+   - Uses **Azure Active Directory Default** authentication (when using server/db names)
    - Supports Multi-Factor Authentication (MFA)
    - Supports full connection strings for custom authentication
+   - Automatic fallback for local/on-prem SQL servers
 
 ### 3. **Batch Processing**
    - Configurable batch size (default: 100,000)
@@ -58,7 +81,7 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
 
 ### 4. **Parallel Processing**
    - Multi-threaded table syncing
-   - Configurable thread count
+   - Configurable thread count (default: 4)
    - Thread-safe result tracking
 
 ### 5. **Connection Resiliency**
@@ -77,7 +100,7 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
    - Requires explicit flags for safety
 
 ### 8. **Progress Tracking & Resume**
-   - Real-time console output
+   - Real-time console output with Spectre.Console
    - JSON result files with full run details
    - Enables manual resume by identifying failed tables
    - Optional primary key ordering for consistent continuation (`--order-by-pk`)
@@ -88,6 +111,7 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
 - **Dapper** (2.1.66) - Lightweight ORM for efficient queries
 - **McMaster.Extensions.CommandLineUtils** (4.1.1) - Command-line parsing
 - **Polly** (8.6.5) - Resilience and retry policies
+- **Spectre.Console** (0.49.1) - Rich console output and progress bars
 - **System.Configuration.ConfigurationManager** (10.0.1) - Configuration support
 
 ## 🛠️ Technical Details
@@ -115,9 +139,9 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
    - Updates progress and result tracking in real-time
 
 5. **Completion Phase**
-   - Displays summary statistics
+   - Displays summary statistics with Spectre.Console tables
    - Saves JSON result file with all run details
-   - Reports timing and performance
+   - Reports timing and performance metrics
 
 ### Performance Characteristics
 
@@ -138,11 +162,14 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
 | Large      | Fast          | 500-1000            |
 | Large      | Slow          | 100-500             |
 
+**Default**: 100,000 (suitable for most scenarios with fast networks)
+
 ### Thread Count Guidelines
 
-- **1 thread**: Default, safe for all scenarios
-- **2-4 threads**: Good for multiple small tables
+- **1 thread**: Safe for all scenarios, sequential processing
+- **2-4 threads**: Good for multiple small tables (default: 4)
 - **4+ threads**: Use with caution, monitor database connection limits
+- **Max recommended**: 8 threads (depending on server capacity)
 
 ## 🔒 Security Best Practices
 
@@ -152,29 +179,34 @@ dotnet run -- "source.database.windows.net" "SourceDB" "target.database.windows.
 4. **Use least-privilege accounts** (SELECT on source, INSERT on target)
 5. **Enable firewall rules** to restrict database access
 6. **Store credentials securely** - never commit connection strings to source control
+7. **Use Azure Key Vault** or similar secret management for production deployments
 
 ## 📊 Example Output
 
 ```
-MS SQL DB Sink - Database Record Sync Tool
-===========================================
+┌─────────────────────────────────────────────────────────────┐
+│ MS SQL DB Sink - Database Record Sync Tool                 │
+└─────────────────────────────────────────────────────────────┘
 
 Source: source.database.windows.net (SourceDB)
 Target: target.database.windows.net (TargetDB)
-Batch Size: 1000
-Parallel Threads: 2
+Batch Size: 100,000
+Parallel Threads: 4
 
 Fetching list of tables from source database...
 Found 3 tables to sync.
 
-Syncing table: dbo.Users
-  Table: dbo.Users | Keys: UserId | Source: 15,234 | Target: 12,100
-  > dbo.Users: 15,234/15,234
-  ✓ dbo.Users Completed in 12.45s - Inserted: 3,134, Skipped: 12,100
+┌──────────────┬──────────┬──────────┬──────────┬────────────┐
+│ Table        │ Source   │ Target   │ Inserted │ Duration   │
+├──────────────┼──────────┼──────────┼──────────┼────────────┤
+│ dbo.Users    │ 15,234   │ 12,100   │ 3,134    │ 12.45s     │
+│ dbo.Orders   │ 50,000   │ 48,000   │ 2,000    │ 8.30s      │
+│ dbo.Products │ 1,200    │ 1,200    │ 0        │ 0.15s      │
+└──────────────┴──────────┴──────────┴──────────┴────────────┘
 
 ✓ Sync completed successfully!
 
-Results saved to: results/sync-result-20251211_143022.json
+Results saved to: results/sync-result-20260108_143022.json
 ```
 
 ## 🚨 Important Notes
@@ -221,6 +253,39 @@ Results saved to: results/sync-result-20251211_143022.json
 ### Issue: "Connection timeout"
 **Solution**: Check firewall rules and whitelist your IP
 
+### Issue: "Azure AD authentication failed"
+**Solution**: Run `az login` or use connection strings with SQL authentication
+
+## 🔧 Building and Publishing
+
+### Debug Build
+```bash
+dotnet build
+# Output: src/MSSQLDBSink/bin/Debug/net10.0/
+```
+
+### Release Build
+```bash
+dotnet build -c Release
+# Output: src/MSSQLDBSink/bin/Release/net10.0/
+```
+
+### Publish for Distribution
+```bash
+# Framework-dependent (requires .NET runtime)
+dotnet publish -c Release -o ./publish
+
+# Self-contained (includes .NET runtime)
+dotnet publish -c Release -r win-x64 --self-contained -o ./publish-win
+dotnet publish -c Release -r linux-x64 --self-contained -o ./publish-linux
+dotnet publish -c Release -r osx-x64 --self-contained -o ./publish-mac
+```
+
+### Running Tests
+```bash
+dotnet test
+```
+
 ## 📝 License
 
 This project is licensed under a custom license. It is free for non-commercial use but cannot be included in other projects or redistributed.
@@ -231,6 +296,7 @@ Contributions welcome! Feel free to submit issues or pull requests.
 
 ---
 
-**Created**: December 2025
-**Version**: 2.0.0
-**Target Framework**: .NET 10.0
+**Version**: 2.0.0  
+**Target Framework**: .NET 10.0  
+**Repository**: https://github.com/hpractv/ms-sql-db-sink  
+**Last Updated**: January 2026

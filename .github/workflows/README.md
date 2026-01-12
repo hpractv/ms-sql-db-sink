@@ -1,8 +1,20 @@
-# Build and Release Workflow Documentation
+# GitHub Actions Workflows Documentation
 
 ## Overview
 
-This repository uses a unified GitHub Actions workflow (`build-and-release.yml`) that handles all aspects of building, testing, and releasing the MSSQLDBSink application across multiple platforms.
+This repository uses GitHub Actions workflows to automate building, testing, releasing, and documentation synchronization for the MSSQLDBSink application.
+
+## Workflows
+
+### 1. Build and Release (`build-and-release.yml`)
+Handles all aspects of building, testing, and releasing the MSSQLDBSink application across multiple platforms.
+
+### 2. Sync Wiki (`sync-wiki.yml`)
+Automatically syncs the `wiki/` folder content to the GitHub wiki repository, making documentation available at `https://github.com/hpractv/ms-sql-db-sink/wiki`.
+
+---
+
+## Build and Release Workflow
 
 ## Workflow Features
 
@@ -255,3 +267,73 @@ The workflow tracks code coverage and displays it in PR comments:
 - 🔴 Red: <60% coverage
 
 Coverage reports are available as workflow artifacts for detailed analysis.
+
+---
+
+## Sync Wiki Workflow
+
+### Overview
+The `sync-wiki.yml` workflow automatically synchronizes the contents of the `wiki/` folder in the main repository to the GitHub wiki repository.
+
+### Features
+- **Automatic Sync**: Runs on every push to main that modifies files in the `wiki/` directory
+- **Manual Trigger**: Can be manually triggered via GitHub Actions UI
+- **Smart Updates**: Only commits changes when wiki content actually changes
+- **Bot Commits**: Uses `github-actions[bot]` as the commit author
+
+### Workflow Details
+
+**Trigger Events:**
+- Push to `main` or `master` branches with changes in `wiki/` directory
+- Manual workflow dispatch
+
+**How it Works:**
+1. Checks out the main repository
+2. Clones the GitHub wiki repository (`.wiki.git`)
+3. Syncs files from `wiki/` folder to the wiki repository using `rsync`
+4. Commits and pushes changes if any modifications are detected
+
+**Prerequisites:**
+- GitHub wiki must be enabled for the repository
+- The workflow uses `GITHUB_TOKEN` which is automatically provided by GitHub Actions
+
+### Maintaining Wiki Content
+
+**To update wiki documentation:**
+1. Edit files in the `wiki/` folder of the main repository
+2. Commit and push changes to main
+3. The workflow automatically syncs changes to the GitHub wiki
+4. Documentation becomes available at: `https://github.com/hpractv/ms-sql-db-sink/wiki`
+
+**Wiki File Structure:**
+```
+wiki/
+├── Home.md              # Wiki home page
+├── Project-Summary.md   # Technical documentation
+├── Usage-Guide.md       # Usage examples and guides
+└── README.md           # Local documentation index
+```
+
+**Note:** The `README.md` file is excluded from the wiki sync as GitHub wikis use `Home.md` as their main page.
+
+### Manual Sync
+To manually trigger the wiki sync:
+1. Go to Actions tab in GitHub
+2. Select "Sync Wiki" workflow
+3. Click "Run workflow"
+4. Select the branch (usually `main`)
+5. Click "Run workflow"
+
+### Troubleshooting
+
+**Wiki Not Syncing:**
+- Ensure the GitHub wiki is enabled in repository settings
+- Check that changes were made in the `wiki/` directory
+- Verify the workflow has `contents: write` permission
+- Review workflow logs for error messages
+
+**Sync Conflicts:**
+- The workflow uses `rsync --delete` to ensure wiki repository matches the source
+- Manual changes in the wiki UI will be overwritten by the next sync
+- Always edit wiki content in the main repository's `wiki/` folder
+
