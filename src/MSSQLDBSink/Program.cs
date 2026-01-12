@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using Microsoft.Data.SqlClient;
 using MSSQLDBSink;
 using McMaster.Extensions.CommandLineUtils;
 using Spectre.Console;
@@ -94,9 +95,24 @@ class Program
         }
         else
         {
-            var sourceConn = new AzureAdConnection(SourceServer!, SourceDb!);
-            sourceConnStr = sourceConn.ConnectionString;
-            AnsiConsole.MarkupLine($"[cyan]Source:[/] {SourceServer} ([grey]{SourceDb}[/])");
+            if (IsLocalhost(SourceServer!))
+            {
+                var builder = new SqlConnectionStringBuilder
+                {
+                    DataSource = SourceServer,
+                    InitialCatalog = SourceDb,
+                    IntegratedSecurity = true,
+                    TrustServerCertificate = true
+                };
+                sourceConnStr = builder.ConnectionString;
+                AnsiConsole.MarkupLine($"[cyan]Source:[/] {SourceServer} ([grey]{SourceDb}[/]) [green](Localhost)[/]");
+            }
+            else
+            {
+                var sourceConn = new AzureAdConnection(SourceServer!, SourceDb!);
+                sourceConnStr = sourceConn.ConnectionString;
+                AnsiConsole.MarkupLine($"[cyan]Source:[/] {SourceServer} ([grey]{SourceDb}[/]) [blue](Azure AD)[/]");
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(TargetConnectionString))
@@ -106,9 +122,24 @@ class Program
         }
         else
         {
-            var targetConn = new AzureAdConnection(TargetServer!, TargetDb!);
-            targetConnStr = targetConn.ConnectionString;
-            AnsiConsole.MarkupLine($"[cyan]Target:[/] {TargetServer} ([grey]{TargetDb}[/])");
+            if (IsLocalhost(TargetServer!))
+            {
+                var builder = new SqlConnectionStringBuilder
+                {
+                    DataSource = TargetServer,
+                    InitialCatalog = TargetDb,
+                    IntegratedSecurity = true,
+                    TrustServerCertificate = true
+                };
+                targetConnStr = builder.ConnectionString;
+                AnsiConsole.MarkupLine($"[cyan]Target:[/] {TargetServer} ([grey]{TargetDb}[/]) [green](Localhost)[/]");
+            }
+            else
+            {
+                var targetConn = new AzureAdConnection(TargetServer!, TargetDb!);
+                targetConnStr = targetConn.ConnectionString;
+                AnsiConsole.MarkupLine($"[cyan]Target:[/] {TargetServer} ([grey]{TargetDb}[/]) [blue](Azure AD)[/]");
+            }
         }
 
         var info = new Table();
@@ -196,6 +227,14 @@ class Program
             AnsiConsole.MarkupLine($"\n[red]✗[/] Error during sync: [red]{Markup.Escape(ex.Message)}[/]");
             AnsiConsole.WriteLine($"Stack trace: {ex.StackTrace}");
         }
+    }
+
+    private static bool IsLocalhost(string server)
+    {
+        return string.Equals(server, "localhost", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(server, "127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(server, ".", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(server, "(local)", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
