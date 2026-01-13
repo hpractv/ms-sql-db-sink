@@ -52,6 +52,9 @@ class Program
     [Option("--target-columns-only", Description = "Import only columns that exist in target (default: false)")]
     public bool TargetColumnsOnly { get; set; }
 
+    [Option("--order-by-pk", Description = "Explicitly order by Primary Key during sync (default: true)")]
+    public bool OrderByPk { get; set; } = true;
+
     [Option("--map-column", Description = "Map source column to target column. Format: Schema.Table.SourceCol=TargetCol (can specify multiple)")]
     public string[]? MapColumn { get; set; }
 
@@ -151,6 +154,7 @@ class Program
         info.AddRow("[cyan]Deep Compare[/]", DeepCompare ? "[green]Yes[/]" : "[red]No[/]");
         info.AddRow("[cyan]Clear Target[/]", ClearTarget ? "[green]Yes[/]" : "[red]No[/]");
         info.AddRow("[cyan]Target Columns Only[/]", TargetColumnsOnly ? "[green]Yes[/]" : "[red]No[/]");
+        info.AddRow("[cyan]Order By PK[/]", OrderByPk ? "[green]Yes[/]" : "[red]No[/]");
         info.AddRow("[cyan]Column Mappings[/]", MapColumn?.Length > 0 ? $"{MapColumn.Length} mapping(s)" : "[grey]None[/]");
         info.AddRow("[cyan]Compare Counts & Schema[/]", CompareCountsAndSchema ? "[green]Yes[/]" : "[red]No[/]");
         info.AddRow("[cyan]Output Directory[/]", OutputDir);
@@ -183,6 +187,7 @@ class Program
             DeepCompare,
             ClearTarget,
             TargetColumnsOnly,
+            OrderByPk,
             OutputDir);
 
         try
@@ -215,6 +220,7 @@ class Program
                     DeepCompare = DeepCompare,
                     ClearTarget = ClearTarget,
                     TargetColumnsOnly = TargetColumnsOnly,
+                    OrderByPk = OrderByPk,
                     ColumnMappings = columnMappings
                 };
 

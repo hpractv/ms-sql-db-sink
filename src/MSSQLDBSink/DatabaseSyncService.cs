@@ -20,6 +20,7 @@ public class DatabaseSyncService : IDatabaseSyncService
     private readonly bool _deepCompare;
     private readonly bool _clearTarget;
     private readonly bool _targetColumnsOnly;
+    private readonly bool _orderByPk;
     private readonly string _outputDir;
     private SyncRunResult? _runResult;
     private readonly object _resultLock = new object();
@@ -36,6 +37,7 @@ public class DatabaseSyncService : IDatabaseSyncService
         bool deepCompare = false,
         bool clearTarget = false,
         bool targetColumnsOnly = false,
+        bool orderByPk = true,
         string outputDir = "results")
     {
         _sourceConnectionString = EnsureReadOnly(EnsureConnectionTimeout(sourceConnectionString));
@@ -45,6 +47,7 @@ public class DatabaseSyncService : IDatabaseSyncService
         _deepCompare = deepCompare;
         _clearTarget = clearTarget;
         _targetColumnsOnly = targetColumnsOnly;
+        _orderByPk = orderByPk;
         _outputDir = outputDir;
     }
 
@@ -1497,14 +1500,14 @@ public class DatabaseSyncService : IDatabaseSyncService
         return await connection.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM {qualified}", commandTimeout: _commandTimeout);
     }
 
-    private async Task<List<Dictionary<string, object?>>> FetchRecordsBatchAsync(
-        SqlConnection connection,
+    public static string BuildFetchQuery(
         string tableName,
         List<string> columns,
         List<string> primaryKeys,
         Dictionary<string, string> targetToSourceMap,
         int offset,
-        int batchSize)
+        int batchSize,
+        bool orderByPk)
     {
         // Build SELECT using source column names with aliases to target names
         // columns contains target column names, targetToSourceMap maps target -> source
@@ -1520,9 +1523,9 @@ public class DatabaseSyncService : IDatabaseSyncService
         string columnList = string.Join(", ", selectParts);
 
         // Determine ORDER BY clause
-        // Use primary keys if available, otherwise fallback to first column or (SELECT NULL)
+        // Use primary keys if available AND orderByPk is true, otherwise fallback to first column or (SELECT NULL)
         string orderByClause;
-        if (primaryKeys != null && primaryKeys.Any())
+        if (orderByPk && primaryKeys != null && primaryKeys.Any())
         {
             // Primary keys are in source column names (usually).
             // We need to make sure we use the source column names for sorting.
@@ -1554,6 +1557,20 @@ public class DatabaseSyncService : IDatabaseSyncService
             SELECT {outerSelectList}
             FROM OrderedData
             WHERE [__rn] > @Offset AND [__rn] <= @Offset + @BatchSize";
+
+        return query;
+    }
+
+    private async Task<List<Dictionary<string, object?>>> FetchRecordsBatchAsync(
+        SqlConnection connection,
+        string tableName,
+        List<string> columns,
+        List<string> primaryKeys,
+        Dictionary<string, string> targetToSourceMap,
+        int offset,
+        int batchSize)
+    {
+        string query = BuildFetchQuery(tableName, columns, primaryKeys, targetToSourceMap, offset, batchSize, _orderByPk);
 
         var records = await connection.QueryAsync(query, new { Offset = offset, BatchSize = batchSize }, commandTimeout: _commandTimeout);
 
