@@ -14,25 +14,25 @@ This `wiki/` folder is automatically synced to the GitHub wiki at `https://githu
 ## 📚 Documentation Files
 
 - **[Home.md](Home.md)** - Wiki home page with overview and navigation links
-- **[Project-Summary.md](Project-Summary.md)** - Technical architecture, features, and implementation details
-- **[Usage-Guide.md](Usage-Guide.md)** - Comprehensive usage examples, scenarios, and best practices
+- **[Project-Summary.md](Project-Summary)** - Technical architecture, features, and implementation details
+- **[Usage-Guide.md](Usage-Guide)** - Comprehensive usage examples, scenarios, and best practices
 
 ## 🔗 Quick Links
 
 ### Getting Started
-- [Installation and Setup](Usage-Guide.md#installation-and-setup)
-- [Quick Start](Usage-Guide.md#quick-start)
-- [Command Line Usage](Usage-Guide.md#command-line-usage)
+- [Installation and Setup](Usage-Guide#installation-and-setup)
+- [Quick Start](Usage-Guide#quick-start)
+- [Command Line Usage](Usage-Guide#command-line-usage)
 
 ### Technical Information
-- [Key Features](Project-Summary.md#key-features)
-- [How It Works](Project-Summary.md#how-it-works)
-- [Performance Guidelines](Project-Summary.md#configuration-options)
+- [Key Features](Project-Summary#key-features)
+- [How It Works](Project-Summary#how-it-works)
+- [Performance Guidelines](Project-Summary#configuration-options)
 
 ### Help
-- [Common Scenarios](Usage-Guide.md#common-scenarios)
-- [Best Practices](Usage-Guide.md#best-practices)
-- [Troubleshooting](Usage-Guide.md#troubleshooting)
+- [Common Scenarios](Usage-Guide#common-scenarios)
+- [Best Practices](Usage-Guide#best-practices)
+- [Troubleshooting](Usage-Guide#troubleshooting)
 
 ## 📖 Documentation Hierarchy
 
@@ -57,10 +57,10 @@ Start with the [main README](../README.md) or [Quick Reference](../QUICK_REFEREN
 Start with [Wiki Home](Home.md) and follow the links to specific topics.
 
 ### For Troubleshooting
-Go directly to the [Troubleshooting section](Usage-Guide.md#troubleshooting).
+Go directly to the [Troubleshooting section](Usage-Guide#troubleshooting).
 
 ### For Development
-Review [Project Summary](Project-Summary.md) for technical details.
+Review [Project Summary](Project-Summary) for technical details.
 
 ---
 
