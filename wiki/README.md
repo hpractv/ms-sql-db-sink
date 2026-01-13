@@ -13,7 +13,7 @@ This `wiki/` folder is automatically synced to the GitHub wiki at `https://githu
 
 ## 📚 Documentation Files
 
-- **[Home.md](Home.md)** - Wiki home page with overview and navigation links
+- **[Home.md](Home)** - Wiki home page with overview and navigation links
 - **[Project-Summary.md](Project-Summary)** - Technical architecture, features, and implementation details
 - **[Usage-Guide.md](Usage-Guide)** - Comprehensive usage examples, scenarios, and best practices
 
@@ -54,7 +54,7 @@ Repository Root
 Start with the [main README](../README.md) or [Quick Reference](../QUICK_REFERENCE.md).
 
 ### For Detailed Learning
-Start with [Wiki Home](Home.md) and follow the links to specific topics.
+Start with [Wiki Home](Home) and follow the links to specific topics.
 
 ### For Troubleshooting
 Go directly to the [Troubleshooting section](Usage-Guide#troubleshooting).
