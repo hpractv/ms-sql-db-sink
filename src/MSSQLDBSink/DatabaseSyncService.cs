@@ -20,6 +20,7 @@ public class DatabaseSyncService : IDatabaseSyncService
     private readonly bool _deepCompare;
     private readonly bool _clearTarget;
     private readonly bool _targetColumnsOnly;
+    private readonly bool _orderByPk;
     private readonly string _outputDir;
     private SyncRunResult? _runResult;
     private readonly object _resultLock = new object();
@@ -45,6 +46,7 @@ public class DatabaseSyncService : IDatabaseSyncService
         bool deepCompare = false,
         bool clearTarget = false,
         bool targetColumnsOnly = false,
+        bool orderByPk = true,
         string outputDir = "results")
     {
         _sourceConnectionString = EnsureReadOnly(EnsureConnectionTimeout(sourceConnectionString));
@@ -54,6 +56,7 @@ public class DatabaseSyncService : IDatabaseSyncService
         _deepCompare = deepCompare;
         _clearTarget = clearTarget;
         _targetColumnsOnly = targetColumnsOnly;
+        _orderByPk = orderByPk;
         _outputDir = outputDir;
     }
 
@@ -1635,14 +1638,14 @@ public class DatabaseSyncService : IDatabaseSyncService
         return await connection.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM {qualified}", commandTimeout: _commandTimeout);
     }
 
-    private async Task<List<Dictionary<string, object?>>> FetchRecordsBatchAsync(
-        SqlConnection connection,
+    public static string BuildFetchQuery(
         string tableName,
         List<string> columns,
         List<string> primaryKeys,
         Dictionary<string, string> targetToSourceMap,
         int offset,
-        int batchSize)
+        int batchSize,
+        bool orderByPk)
     {
         // Build SELECT using source column names with aliases to target names
         // columns contains target column names, targetToSourceMap maps target -> source
@@ -1663,7 +1666,7 @@ public class DatabaseSyncService : IDatabaseSyncService
         // correspond to the same rows between runs.
         // Defaults to false until next major version, then will default to true
         string orderByClause;
-        if (_orderByPrimaryKey && primaryKeys != null && primaryKeys.Any())
+        if (orderByPk && primaryKeys != null && primaryKeys.Any())
         {
             // Primary keys are in source column names (usually).
             // We need to make sure we use the source column names for sorting.
@@ -1687,14 +1690,34 @@ public class DatabaseSyncService : IDatabaseSyncService
             orderByClause = "(SELECT NULL)";
         }
 
-        string query = $@"
-            SELECT {columnList}
-            FROM {tableName}
-            ORDER BY {orderByClause}
-            OFFSET {offset} ROWS
-            FETCH NEXT {batchSize} ROWS ONLY";
+        // Build outer select list (just the target column names)
+        // Since inside the CTE we already aliased them to target names
+        var outerSelectList = string.Join(", ", columns.Select(c => $"[{c}]"));
 
-        var records = await connection.QueryAsync(query, commandTimeout: _commandTimeout);
+        string query = $@"
+            WITH OrderedData AS (
+                SELECT {columnList}, ROW_NUMBER() OVER (ORDER BY {orderByClause}) AS [__rn]
+                FROM {tableName}
+            )
+            SELECT {outerSelectList}
+            FROM OrderedData
+            WHERE [__rn] > @Offset AND [__rn] <= @Offset + @BatchSize";
+
+        return query;
+    }
+
+    private async Task<List<Dictionary<string, object?>>> FetchRecordsBatchAsync(
+        SqlConnection connection,
+        string tableName,
+        List<string> columns,
+        List<string> primaryKeys,
+        Dictionary<string, string> targetToSourceMap,
+        int offset,
+        int batchSize)
+    {
+        string query = BuildFetchQuery(tableName, columns, primaryKeys, targetToSourceMap, offset, batchSize, _orderByPk);
+
+        var records = await connection.QueryAsync(query, new { Offset = offset, BatchSize = batchSize }, commandTimeout: _commandTimeout);
 
         return records.Select(record =>
         {

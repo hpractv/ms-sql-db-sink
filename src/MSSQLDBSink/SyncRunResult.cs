@@ -42,6 +42,7 @@ public class SyncParameters
     public bool DeepCompare { get; set; }
     public bool ClearTarget { get; set; }
     public bool TargetColumnsOnly { get; set; }
+    public bool OrderByPk { get; set; } = true;
 
     /// <summary>
     /// Column mappings: TableName -> (SourceColumn -> TargetColumn)

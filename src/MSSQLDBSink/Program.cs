@@ -61,8 +61,8 @@ public class Program
     [Option("--start-row", Description = "Starting row number(s) to skip for each table. Comma-separated list matching table order (e.g., '0,1000,500' for 3 tables)")]
     public string? StartRow { get; set; }
 
-    [Option("--order-by-pk", Description = "Order source data by primary keys for consistent continuation (default: false, will default to true in next major version)")]
-    public bool OrderByPrimaryKey { get; set; }
+    [Option("--order-by-pk", Description = "Explicitly order by Primary Key during sync (default: true)")]
+    public bool OrderByPrimaryKey { get; set; } = true;
 
     [Option("-o|--output-dir", Description = "Directory for saving JSON results (default: results)")]
     public string OutputDir { get; set; } = "results";
@@ -141,7 +141,7 @@ public class Program
         info.AddRow("[cyan]Ignored Columns[/]", IgnoreColumn?.Length > 0 ? $"{IgnoreColumn.Length} column(s)" : "[grey]None[/]");
         info.AddRow("[cyan]Column Mappings[/]", MapColumn?.Length > 0 ? $"{MapColumn.Length} mapping(s)" : "[grey]None[/]");
         info.AddRow("[cyan]Start Row Offsets[/]", !string.IsNullOrWhiteSpace(StartRow) ? StartRow : "[grey]None[/]");
-        info.AddRow("[cyan]Order By Primary Key[/]", OrderByPrimaryKey ? "[green]Yes[/]" : "[red]No[/]");
+        info.AddRow("[cyan]Order By PK[/]", OrderByPrimaryKey ? "[green]Yes[/]" : "[red]No[/]");
         info.AddRow("[cyan]Compare Counts & Schema[/]", CompareCountsAndSchema ? "[green]Yes[/]" : "[red]No[/]");
         info.AddRow("[cyan]Output Directory[/]", OutputDir);
         AnsiConsole.Write(info);
@@ -205,6 +205,7 @@ public class Program
             DeepCompare,
             ClearTarget,
             TargetColumnsOnly,
+            OrderByPrimaryKey,
             OutputDir);
 
         try
@@ -252,6 +253,14 @@ public class Program
             AnsiConsole.MarkupLine($"\n[red]✗[/] Error during sync: [red]{Markup.Escape(ex.Message)}[/]");
             AnsiConsole.WriteLine($"Stack trace: {ex.StackTrace}");
         }
+    }
+
+    private static bool IsLocalhost(string server)
+    {
+        return string.Equals(server, "localhost", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(server, "127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(server, ".", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(server, "(local)", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
