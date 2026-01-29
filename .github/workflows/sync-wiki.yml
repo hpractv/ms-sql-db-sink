@@ -1,0 +1,51 @@
+name: Sync Wiki
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'wiki/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-wiki:
+    name: Sync Wiki to GitHub Wiki
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync to GitHub Wiki
+        run: |
+          # Configure git
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email \
+            "github-actions[bot]@users.noreply.github.com"
+
+          # Clone the wiki repository
+          WIKI_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}"
+          WIKI_URL="${WIKI_URL}@github.com/${{ github.repository }}.wiki.git"
+          git clone "$WIKI_URL" wiki-repo
+
+          # Copy wiki files (exclude README.md as it's for local reference)
+          rsync -av --delete --exclude='.git' --exclude='README.md' \
+            wiki/ wiki-repo/
+
+          # Commit and push changes
+          cd wiki-repo
+          git add .
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to wiki"
+          else
+            git commit -m "Sync wiki from main repository - ${{ github.sha }}"
+            git push origin master
+            echo "Wiki synced successfully"
+          fi

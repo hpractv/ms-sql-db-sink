@@ -29,6 +29,15 @@ public class DatabaseSyncService : IDatabaseSyncService
     // Column mappings: TableName -> (SourceColumn -> TargetColumn)
     private Dictionary<string, Dictionary<string, string>> _columnMappings = new(StringComparer.OrdinalIgnoreCase);
 
+    // Ignored columns: TableName -> Set of Column Names to ignore
+    private Dictionary<string, HashSet<string>> _ignoredColumns = new(StringComparer.OrdinalIgnoreCase);
+
+    // Start row offsets: TableName -> Starting row number to skip
+    private Dictionary<string, int> _startRowOffsets = new(StringComparer.OrdinalIgnoreCase);
+
+    // Order source data by primary keys for consistent continuation
+    private bool _orderByPrimaryKey = false;
+
     public DatabaseSyncService(
         string sourceConnectionString,
         string targetConnectionString,
@@ -55,15 +64,16 @@ public class DatabaseSyncService : IDatabaseSyncService
     {
         try
         {
-            if (connectionString.Contains("Timeout=", StringComparison.OrdinalIgnoreCase) ||
-                connectionString.Contains("Connect Timeout", StringComparison.OrdinalIgnoreCase) ||
-                connectionString.Contains("Connection Timeout", StringComparison.OrdinalIgnoreCase))
+            var builder = new SqlConnectionStringBuilder(connectionString);
+
+            if (!connectionString.Contains("Timeout=", StringComparison.OrdinalIgnoreCase) &&
+                !connectionString.Contains("Connect Timeout", StringComparison.OrdinalIgnoreCase) &&
+                !connectionString.Contains("Connection Timeout", StringComparison.OrdinalIgnoreCase))
             {
-                return connectionString;
+                builder.ConnectTimeout = 0;
             }
 
-            var builder = new SqlConnectionStringBuilder(connectionString);
-            builder.ConnectTimeout = 0;
+            builder.TrustServerCertificate = true;
             return builder.ConnectionString;
         }
         catch
@@ -317,6 +327,10 @@ public class DatabaseSyncService : IDatabaseSyncService
 
         // Store column mappings from parameters
         _columnMappings = parameters?.ColumnMappings ?? new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        // Store ignored columns from parameters
+        _ignoredColumns = parameters?.IgnoredColumns ?? new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        // Store order by primary key flag from parameters
+        _orderByPrimaryKey = parameters?.OrderByPrimaryKey ?? false;
 
         AnsiConsole.WriteLine("Fetching list of tables from source database...");
 
@@ -329,6 +343,31 @@ public class DatabaseSyncService : IDatabaseSyncService
             _runResult.EndTime = DateTime.UtcNow;
             await SaveResultFileAsync();
             return;
+        }
+
+        // Map start row offsets from positional list to table names
+        // The offsets list matches the order of tables selected
+        _startRowOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (parameters?.StartRowOffsets != null && parameters.StartRowOffsets.Count > 0)
+        {
+            var offsetsList = parameters.StartRowOffsets;
+            for (int i = 0; i < Math.Min(tablesToSync.Count, offsetsList.Count); i++)
+            {
+                var tableName = $"{tablesToSync[i].SchemaName}.{tablesToSync[i].TableName}";
+                _startRowOffsets[tableName] = offsetsList[i];
+
+                if (offsetsList[i] > 0)
+                {
+                    AnsiConsole.MarkupLine($"[gray]→ Table {Markup.Escape(tableName)} will skip first {offsetsList[i]:N0} rows[/]");
+                }
+            }
+
+            // Log warning if counts don't match
+            if (offsetsList.Count != tablesToSync.Count)
+            {
+                AnsiConsole.MarkupLine($"[yellow]⚠ Warning: {offsetsList.Count} start row offset(s) provided but {tablesToSync.Count} table(s) to sync. Extra offsets ignored, missing offsets default to 0.[/]");
+            }
+            AnsiConsole.WriteLine();
         }
 
         AnsiConsole.WriteLine($"Found {tablesToSync.Count} tables to sync.\n");
@@ -625,6 +664,40 @@ public class DatabaseSyncService : IDatabaseSyncService
     }
 
     /// <summary>
+    /// Gets ignored columns for a specific table.
+    /// Combines table-specific ignores with global ignores ("*").
+    /// </summary>
+    private HashSet<string> GetTableIgnoredColumns(string tableName)
+    {
+        var ignored = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Add global ignores
+        if (_ignoredColumns.TryGetValue("*", out var globalIgnores))
+        {
+            foreach (var col in globalIgnores) ignored.Add(col);
+        }
+
+        // Add table-specific ignores (handles Schema.Table and Table if same)
+        if (_ignoredColumns.TryGetValue(tableName, out var tableIgnores))
+        {
+            foreach (var col in tableIgnores) ignored.Add(col);
+        }
+
+        // Try without schema if not found directly
+        var parts = tableName.Split('.');
+        if (parts.Length > 1)
+        {
+            var schemaFreeName = parts[1];
+            if (_ignoredColumns.TryGetValue(schemaFreeName, out var simpleIgnores))
+            {
+                foreach (var col in simpleIgnores) ignored.Add(col);
+            }
+        }
+
+        return ignored;
+    }
+
+    /// <summary>
     /// Applies column mappings to source columns and returns a tuple of:
     /// - List of target column names (to use for INSERT)
     /// - Dictionary mapping target column names to original source column names (for SELECT)
@@ -632,7 +705,8 @@ public class DatabaseSyncService : IDatabaseSyncService
     private (List<string> targetColumns, Dictionary<string, string> targetToSourceMap) ApplyColumnMappings(
         List<string> sourceColumns,
         List<string> targetColumns,
-        Dictionary<string, string> sourceToTargetMappings)
+        Dictionary<string, string> sourceToTargetMappings,
+        HashSet<string> ignoredColumns)
     {
         var resultColumns = new List<string>();
         var targetToSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -640,6 +714,9 @@ public class DatabaseSyncService : IDatabaseSyncService
 
         foreach (var sourceCol in sourceColumns)
         {
+            // Skip ignored columns
+            if (ignoredColumns.Contains(sourceCol)) continue;
+
             string targetCol;
 
             // Check if there's a mapping for this source column
@@ -685,6 +762,7 @@ public class DatabaseSyncService : IDatabaseSyncService
         // 1. Analyze Table (Get Keys & Columns) - Retryable
         // Get column mappings for this table (SourceCol -> TargetCol)
         var tableColumnMappings = GetTableColumnMappings(tableName);
+        var tableIgnoredColumns = GetTableIgnoredColumns(tableName);
 
         var (primaryKeys, columns, schemaErrors, targetToSourceMap) = await retryPolicy.ExecuteAsync(async () =>
         {
@@ -703,7 +781,7 @@ public class DatabaseSyncService : IDatabaseSyncService
 
             // Apply column mappings to determine effective source column names
             // This maps SourceCol -> TargetCol, so we need to see which source columns can match target
-            var (mappedColumns, targetToSource) = ApplyColumnMappings(sourceCols, targetCols, tableColumnMappings);
+            var (mappedColumns, targetToSource) = ApplyColumnMappings(sourceCols, targetCols, tableColumnMappings, tableIgnoredColumns);
 
             // For schema error tracking, we need the original source column set
             var sourceColSet = new HashSet<string>(sourceCols, StringComparer.OrdinalIgnoreCase);
@@ -712,8 +790,11 @@ public class DatabaseSyncService : IDatabaseSyncService
             // A source column is "missing in target" if:
             // - It doesn't exist in target AND
             // - It doesn't have a mapping to a column that exists in target
+            // - AND it is not ignored
             schemaErrors.MissingColumnsInTarget = sourceCols
                 .Where(c => {
+                    if (tableIgnoredColumns.Contains(c)) return false; // Ignored columns are not "missing"
+
                     // If there's a mapping, check if the mapped target exists
                     if (tableColumnMappings.TryGetValue(c, out var mappedTarget))
                     {
@@ -877,16 +958,64 @@ public class DatabaseSyncService : IDatabaseSyncService
         // Clear target mode: use bulk insert for speed
         if (_clearTarget)
         {
-            await ClearTargetAndBulkInsertAsync(tableName, columns, targetToSourceMap, sourceCount, tableResult, stopwatch, progressTask);
-            return;
+            await ClearTargetTableAsync(tableName);
         }
 
         progressTask?.Description($"[cyan]{GetDisplayName(tableName)}[/] [gray]Source: {sourceCount:N0} | Target: {targetCount:N0}[/]");
 
         // 3. Sync Batches (normal mode)
-        int offset = targetCount;
+        // Get start row offset for this table if specified
+        int startRowOffset = 0;
+        if (_startRowOffsets.TryGetValue(tableName, out int configuredOffset))
+        {
+            startRowOffset = configuredOffset;
+            tableResult.StartRowOffset = startRowOffset;
+
+            if (startRowOffset > 0)
+            {
+                if (startRowOffset >= sourceCount)
+                {
+                    // Start offset is beyond the total records - nothing to sync
+                    stopwatch.Stop();
+                    tableResult.Status = "Completed";
+                    tableResult.Inserted = 0;
+                    tableResult.Skipped = startRowOffset; // Skipped count represents rows intentionally skipped due to offset
+                    tableResult.EndTime = DateTime.UtcNow;
+                    tableResult.DurationSeconds = stopwatch.Elapsed.TotalSeconds;
+                    lock (_resultLock)
+                    {
+                        _runResult?.AddOrUpdateTable(tableResult);
+                    }
+                    await SaveResultFileAsync();
+                    return;
+                }
+
+                // Validate that we have primary keys and ordering enabled for consistent ordering (required for continuation)
+                if (!_orderByPrimaryKey)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]⚠ Warning:[/] Start row offset specified for {GetDisplayName(tableName)} but --order-by-pk is not enabled. Ordering may be inconsistent between runs. Use --order-by-pk for reliable continuation.");
+                }
+                else if (!primaryKeys.Any())
+                {
+                    AnsiConsole.MarkupLine($"[yellow]⚠ Warning:[/] Start row offset specified for {GetDisplayName(tableName)} but no primary keys found. Ordering may be inconsistent between runs.");
+                }
+
+                // Log that we're using primary key ordering for continuation (if enabled)
+                if (_orderByPrimaryKey && primaryKeys.Any())
+                {
+                    var pkList = string.Join(", ", primaryKeys);
+                    AnsiConsole.MarkupLine($"[gray]  → Starting from row {startRowOffset:N0} (skipping first {startRowOffset:N0} rows, ordered by: {Markup.Escape(pkList)})[/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine($"[gray]  → Starting from row {startRowOffset:N0} (skipping first {startRowOffset:N0} rows)[/]");
+                }
+            }
+        }
+
+        int offset = startRowOffset;
         int totalInserted = 0;
-        int totalSkipped = 0;
+        int totalSkipped = startRowOffset; // Initialize with the number of rows we're skipping from the start
 
         while (offset < sourceCount)
         {
@@ -999,6 +1128,7 @@ public class DatabaseSyncService : IDatabaseSyncService
             return; // Skip clearing temporal history tables
         }
 
+        var qualifiedTable = FormatTableName(tableName);
         var retryPolicy = GetRetryPolicy();
 
         await retryPolicy.ExecuteAsync(async () =>
@@ -1006,7 +1136,7 @@ public class DatabaseSyncService : IDatabaseSyncService
             // Try TRUNCATE first (fastest, but fails with FK constraints)
             try
             {
-                await targetConnection.ExecuteAsync($"TRUNCATE TABLE {tableName}", commandTimeout: _commandTimeout);
+                await targetConnection.ExecuteAsync($"TRUNCATE TABLE {qualifiedTable}", commandTimeout: _commandTimeout);
                 return;
             }
             catch (SqlException ex) when (ex.Number == 4712) // Cannot delete from temporal history table
@@ -1022,9 +1152,9 @@ public class DatabaseSyncService : IDatabaseSyncService
             // Try disabling constraints, deleting, then re-enabling
             try
             {
-                await targetConnection.ExecuteAsync($"ALTER TABLE {tableName} NOCHECK CONSTRAINT ALL", commandTimeout: _commandTimeout);
-                await targetConnection.ExecuteAsync($"DELETE FROM {tableName}", commandTimeout: _commandTimeout);
-                await targetConnection.ExecuteAsync($"ALTER TABLE {tableName} CHECK CONSTRAINT ALL", commandTimeout: _commandTimeout);
+                await targetConnection.ExecuteAsync($"ALTER TABLE {qualifiedTable} NOCHECK CONSTRAINT ALL", commandTimeout: _commandTimeout);
+                await targetConnection.ExecuteAsync($"DELETE FROM {qualifiedTable}", commandTimeout: _commandTimeout);
+                await targetConnection.ExecuteAsync($"ALTER TABLE {qualifiedTable} CHECK CONSTRAINT ALL", commandTimeout: _commandTimeout);
             }
             catch (SqlException ex) when (ex.Number == 4712) // Cannot delete from temporal history table
             {
@@ -1044,7 +1174,7 @@ public class DatabaseSyncService : IDatabaseSyncService
                 // This will throw and be caught by the retry policy
                 try
                 {
-                    await targetConnection.ExecuteAsync($"DELETE FROM {tableName}", commandTimeout: _commandTimeout);
+                    await targetConnection.ExecuteAsync($"DELETE FROM {qualifiedTable}", commandTimeout: _commandTimeout);
                 }
                 catch (SqlException ex2) when (ex2.Number == 4712 || ex2.Number == 547)
                 {
@@ -1138,8 +1268,16 @@ public class DatabaseSyncService : IDatabaseSyncService
                         }
                     }
 
-                // Use SqlBulkCopy for fast bulk insert
-                    using var bulkCopy = new SqlBulkCopy(targetConnection)
+                    // Check for Identity column to enable KeepIdentity
+                    bool hasIdentity = await HasIdentityColumnAsync(targetConnection, tableName);
+                    var bulkCopyOptions = SqlBulkCopyOptions.Default;
+                    if (hasIdentity)
+                    {
+                        bulkCopyOptions |= SqlBulkCopyOptions.KeepIdentity;
+                    }
+
+                    // Use SqlBulkCopy for fast bulk insert
+                    using var bulkCopy = new SqlBulkCopy(targetConnection, bulkCopyOptions, null)
                     {
                         DestinationTableName = qualifiedTable,
                         BatchSize = _batchSize,
@@ -1523,18 +1661,24 @@ public class DatabaseSyncService : IDatabaseSyncService
         string columnList = string.Join(", ", selectParts);
 
         // Determine ORDER BY clause
-        // Use primary keys if available AND orderByPk is true, otherwise fallback to first column or (SELECT NULL)
+        // When --order-by-pk is enabled, order by primary keys to ensure consistent ordering
+        // for continuation/resume functionality. Without consistent ordering, OFFSET won't
+        // correspond to the same rows between runs.
+        // Defaults to false until next major version, then will default to true
         string orderByClause;
         if (orderByPk && primaryKeys != null && primaryKeys.Any())
         {
             // Primary keys are in source column names (usually).
             // We need to make sure we use the source column names for sorting.
             // (The primaryKeys list passed in *is* source column names).
+            // Order by all primary key columns to ensure deterministic ordering
             orderByClause = string.Join(", ", primaryKeys.Select(pk => $"[{pk}]"));
         }
         else if (columns.Any())
         {
              // Fallback to first available column (better than nothing)
+             // NOTE: This should rarely happen as tables without PKs are typically skipped
+             // unless --allow-no-pk is set, in which case primaryKeys would be set to columns
              // We need the source column name
              var firstTarget = columns.First();
              var firstSource = targetToSourceMap.TryGetValue(firstTarget, out var mapped) ? mapped : firstTarget;
@@ -1542,6 +1686,7 @@ public class DatabaseSyncService : IDatabaseSyncService
         }
         else
         {
+            // This should never happen in practice, but handle gracefully
             orderByClause = "(SELECT NULL)";
         }
 
@@ -1609,10 +1754,12 @@ public class DatabaseSyncService : IDatabaseSyncService
 
         try
         {
-            // 2. Create Staging Table (Clone structure of target)
-            // We use TOP 0 to create an empty table with the same schema
+            // 2. Create Staging Table (Clone structure of target but only include synced columns)
+            // We select specific columns to avoid issues with ignored/missing columns
+            // and use TOP 0 to create an empty table structure
+            var stagingColumnList = string.Join(", ", columns.Select(c => $"[{c}]"));
             await connection.ExecuteAsync(
-                $"SELECT TOP 0 * INTO {stagingTableName} FROM {tableName} WHERE 1 = 0",
+                $"SELECT TOP 0 {stagingColumnList} INTO {stagingTableName} FROM {tableName} WHERE 1 = 0",
                 transaction: transaction,
                 commandTimeout: _commandTimeout);
 
@@ -1637,7 +1784,14 @@ public class DatabaseSyncService : IDatabaseSyncService
             }
 
             // 4. Bulk Insert into Staging Table
-            using (var bulkCopy = new SqlBulkCopy(connection, SqlBulkCopyOptions.Default, transaction))
+            // Use KeepIdentity to preserve identity values from source if present
+            var bulkCopyOptions = SqlBulkCopyOptions.Default;
+            if (hasIdentity)
+            {
+                bulkCopyOptions |= SqlBulkCopyOptions.KeepIdentity;
+            }
+
+            using (var bulkCopy = new SqlBulkCopy(connection, bulkCopyOptions, transaction))
             {
                 bulkCopy.DestinationTableName = stagingTableName;
                 bulkCopy.BulkCopyTimeout = _commandTimeout;
@@ -1684,9 +1838,12 @@ public class DatabaseSyncService : IDatabaseSyncService
             ";
 
             // Handle Identity Insert
-            // bool hasIdentity = await HasIdentityColumnAsync(connection, tableName); // Removed duplicate call inside transaction
+            // Check if identity insert is already on for this session/table, though SET IDENTITY_INSERT is session-scoped per table.
             if (hasIdentity)
             {
+                // We wrap the INSERT in a block that turns IDENTITY_INSERT ON and then OFF
+                // Note: You can only have IDENTITY_INSERT ON for one table at a time in a session.
+                // Since we are inside a transaction scope and this is a single batch execution, this should be safe.
                 mergeSql = $"SET IDENTITY_INSERT {tableName} ON; {mergeSql} SET IDENTITY_INSERT {tableName} OFF;";
             }
 

@@ -14,14 +14,16 @@ public class DatabaseSyncServiceMappingTests
         DatabaseSyncService service,
         List<string> source,
         List<string> target,
-        Dictionary<string,string> mappings)
+        Dictionary<string,string> mappings,
+        HashSet<string>? ignoredColumns = null)
     {
         var method = typeof(DatabaseSyncService).GetMethod(
             "ApplyColumnMappings",
             BindingFlags.Instance | BindingFlags.NonPublic);
         method.Should().NotBeNull();
 
-        var result = (ValueTuple<List<string>, Dictionary<string,string>>)method!.Invoke(service, new object[] { source, target, mappings })!;
+        var ignored = ignoredColumns ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = (ValueTuple<List<string>, Dictionary<string,string>>)method!.Invoke(service, new object[] { source, target, mappings, ignored })!;
         return (result.Item1, result.Item2);
     }
 
@@ -78,5 +80,99 @@ public class DatabaseSyncServiceMappingTests
 
         cols.Should().BeEquivalentTo(new[] { "A" });
         map.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void ApplyColumnMappings_IgnoresSpecifiedColumns()
+    {
+        var service = CreateService();
+        var source = new List<string> { "A", "B", "C", "D" };
+        var target = new List<string> { "A", "B", "C", "D" };
+        var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var ignoredColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "B", "D" };
+
+        var (cols, map) = InvokeApplyColumnMappings(service, source, target, mappings, ignoredColumns);
+
+        cols.Should().BeEquivalentTo(new[] { "A", "C" }, opts => opts.WithStrictOrdering());
+        map.Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["A"] = "A",
+            ["C"] = "C"
+        });
+    }
+
+    [Fact]
+    public void ApplyColumnMappings_IgnoresColumns_CaseInsensitive()
+    {
+        var service = CreateService();
+        var source = new List<string> { "ColumnA", "ColumnB", "ColumnC" };
+        var target = new List<string> { "ColumnA", "ColumnB", "ColumnC" };
+        var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var ignoredColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "columnb" };
+
+        var (cols, map) = InvokeApplyColumnMappings(service, source, target, mappings, ignoredColumns);
+
+        cols.Should().BeEquivalentTo(new[] { "ColumnA", "ColumnC" }, opts => opts.WithStrictOrdering());
+        map.Should().NotContainKey("ColumnB");
+    }
+
+    [Fact]
+    public void ApplyColumnMappings_IgnoresColumns_WithMappings()
+    {
+        var service = CreateService();
+        var source = new List<string> { "SourceA", "SourceB", "SourceC" };
+        var target = new List<string> { "ColA", "ColB", "ColC" };
+        var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["SourceA"] = "ColA",
+            ["SourceB"] = "ColB",
+            ["SourceC"] = "ColC"
+        };
+        var ignoredColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "SourceB" };
+
+        var (cols, map) = InvokeApplyColumnMappings(service, source, target, mappings, ignoredColumns);
+
+        cols.Should().BeEquivalentTo(new[] { "ColA", "ColC" }, opts => opts.WithStrictOrdering());
+        map.Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["ColA"] = "SourceA",
+            ["ColC"] = "SourceC"
+        });
+        map.Should().NotContainKey("ColB");
+    }
+
+    [Fact]
+    public void ApplyColumnMappings_IgnoresAllColumns_ReturnsEmpty()
+    {
+        var service = CreateService();
+        var source = new List<string> { "A", "B", "C" };
+        var target = new List<string> { "A", "B", "C" };
+        var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var ignoredColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "A", "B", "C" };
+
+        var (cols, map) = InvokeApplyColumnMappings(service, source, target, mappings, ignoredColumns);
+
+        cols.Should().BeEmpty();
+        map.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ApplyColumnMappings_IgnoresNonExistentColumns_NoEffect()
+    {
+        var service = CreateService();
+        var source = new List<string> { "A", "B", "C" };
+        var target = new List<string> { "A", "B", "C" };
+        var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var ignoredColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "X", "Y", "Z" };
+
+        var (cols, map) = InvokeApplyColumnMappings(service, source, target, mappings, ignoredColumns);
+
+        cols.Should().BeEquivalentTo(new[] { "A", "B", "C" }, opts => opts.WithStrictOrdering());
+        map.Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["A"] = "A",
+            ["B"] = "B",
+            ["C"] = "C"
+        });
     }
 }

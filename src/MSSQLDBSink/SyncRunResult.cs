@@ -49,6 +49,24 @@ public class SyncParameters
     /// Format: "Schema.Table.SourceCol=TargetCol"
     /// </summary>
     public Dictionary<string, Dictionary<string, string>> ColumnMappings { get; set; } = new();
+
+    /// <summary>
+    /// Ignored columns: TableName -> Set of Column Names to ignore
+    /// </summary>
+    public Dictionary<string, HashSet<string>> IgnoredColumns { get; set; } = new();
+
+    /// <summary>
+    /// Start row offsets: List of starting row numbers (skip first N records) in table selection order
+    /// Used for resuming failed syncs from a specific row number
+    /// The list order matches the order of tables being synced
+    /// </summary>
+    public List<int> StartRowOffsets { get; set; } = new();
+
+    /// <summary>
+    /// Order source data by primary keys for consistent continuation
+    /// Defaults to false until next major version, then will default to true
+    /// </summary>
+    public bool OrderByPrimaryKey { get; set; }
 }
 
 public class TableSyncResult
@@ -66,6 +84,7 @@ public class TableSyncResult
     public DateTime? StartTime { get; set; }
     public DateTime? EndTime { get; set; }
     public SchemaErrors? SchemaErrors { get; set; }
+    public int StartRowOffset { get; set; } // Number of rows skipped at the start of the sync
 }
 
 public class SchemaErrors

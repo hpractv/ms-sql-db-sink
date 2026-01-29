@@ -78,7 +78,11 @@ public class DatabaseSyncServiceUtilityTests
 
         var result = (string)InvokePrivate(service, "EnsureConnectionTimeout", cs);
 
-        result.Should().Be(cs);
+        // The method now uses SqlConnectionStringBuilder which normalizes the format
+        // and adds TrustServerCertificate=True, but should keep the timeout
+        var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(result);
+        builder.ConnectTimeout.Should().Be(30, "connection timeout should be preserved");
+        builder.TrustServerCertificate.Should().BeTrue("TrustServerCertificate should be set to true");
     }
 
     private readonly struct PrivateTableInfo

@@ -26,7 +26,9 @@ public class AzureAdConnection : IAzureAdConnection
         {
             DataSource = _serverName,
             InitialCatalog = _databaseName,
-            Authentication = SqlAuthenticationMethod.ActiveDirectoryInteractive
+            Authentication = SqlAuthenticationMethod.ActiveDirectoryDefault,
+            TrustServerCertificate = true,
+            Encrypt = true
         };
 
         return new SqlConnection(builder.ConnectionString);
@@ -40,7 +42,9 @@ public class AzureAdConnection : IAzureAdConnection
             {
                 DataSource = _serverName,
                 InitialCatalog = _databaseName,
-                Authentication = SqlAuthenticationMethod.ActiveDirectoryInteractive
+                Authentication = SqlAuthenticationMethod.ActiveDirectoryDefault,
+                TrustServerCertificate = true,
+                Encrypt = true
             };
             return builder.ConnectionString;
         }
