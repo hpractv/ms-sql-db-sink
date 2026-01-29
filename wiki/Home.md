@@ -9,32 +9,32 @@ Welcome to the MSSQLDBSink documentation wiki! This comprehensive guide provides
 - **[Quick Reference](../QUICK_REFERENCE.md)** - Common commands and troubleshooting tips
 
 ### Detailed Guides (This Wiki)
-- **[Project Summary](Project-Summary.md)** - Technical architecture, features, and implementation details
-- **[Usage Guide](Usage-Guide.md)** - Comprehensive usage examples, scenarios, and best practices
+- **[Project Summary](Project-Summary)** - Technical architecture, features, and implementation details
+- **[Usage Guide](Usage-Guide)** - Comprehensive usage examples, scenarios, and best practices
 
 ## 🚀 Quick Links
 
 ### Getting Started
-1. [Installation and Setup](Usage-Guide.md#installation-and-setup)
-2. [Quick Start Guide](Usage-Guide.md#quick-start)
-3. [Command Line Usage](Usage-Guide.md#command-line-usage)
+1. [Installation and Setup](Usage-Guide#installation-and-setup)
+2. [Quick Start Guide](Usage-Guide#quick-start)
+3. [Command Line Usage](Usage-Guide#command-line-usage)
 
 ### Common Tasks
-- [Sync a Single Table](Usage-Guide.md#scenario-3-specific-table-migration)
-- [Sync All Tables](Usage-Guide.md#scenario-1-initial-database-seeding)
-- [Full Table Refresh](Usage-Guide.md#scenario-4-full-table-refresh)
-- [Using Connection Strings](Usage-Guide.md#scenario-6-using-connection-strings)
+- [Sync a Single Table](Usage-Guide#scenario-3-specific-table-migration)
+- [Sync All Tables](Usage-Guide#scenario-1-initial-database-seeding)
+- [Full Table Refresh](Usage-Guide#scenario-4-full-table-refresh)
+- [Using Connection Strings](Usage-Guide#scenario-6-using-connection-strings)
 
 ### Technical Information
-- [Key Features](Project-Summary.md#key-features)
-- [How It Works](Project-Summary.md#how-it-works)
-- [Performance Guidelines](Project-Summary.md#configuration-options)
-- [Security Best Practices](Project-Summary.md#security-best-practices)
+- [Key Features](Project-Summary#key-features)
+- [How It Works](Project-Summary#how-it-works)
+- [Performance Guidelines](Project-Summary#configuration-options)
+- [Security Best Practices](Project-Summary#security-best-practices)
 
 ### Help & Support
-- [Troubleshooting Guide](Usage-Guide.md#troubleshooting)
-- [Best Practices](Usage-Guide.md#best-practices)
-- [Common Scenarios](Usage-Guide.md#common-scenarios)
+- [Troubleshooting Guide](Usage-Guide#troubleshooting)
+- [Best Practices](Usage-Guide#best-practices)
+- [Common Scenarios](Usage-Guide#common-scenarios)
 
 ## 📖 What is MSSQLDBSink?
 
@@ -101,42 +101,42 @@ dotnet build
 dotnet run --project src/MSSQLDBSink/MSSQLDBSink.csproj -- [arguments]
 ```
 
-See [Installation and Setup](Usage-Guide.md#installation-and-setup) for detailed instructions.
+See [Installation and Setup](Usage-Guide#installation-and-setup) for detailed instructions.
 
 ## 📋 Documentation Index
 
 ### By Topic
 
 #### Installation & Setup
-- [Prerequisites](Usage-Guide.md#prerequisites)
-- [Installation Methods](Usage-Guide.md#installation-methods)
-- [Publishing Options](Usage-Guide.md#publishing-options)
+- [Prerequisites](Usage-Guide#prerequisites)
+- [Installation Methods](Usage-Guide#installation-methods)
+- [Publishing Options](Usage-Guide#publishing-options)
 
 #### Basic Usage
-- [Command Line Syntax](Usage-Guide.md#command-line-usage)
-- [Arguments and Options](Usage-Guide.md#arguments)
+- [Command Line Syntax](Usage-Guide#command-line-usage)
+- [Arguments and Options](Usage-Guide#arguments)
 - [Authentication Methods](../README.md#authentication)
 
 #### Advanced Usage
-- [Batch Scripts](Usage-Guide.md#using-batch-scripts)
-- [PowerShell Integration](Usage-Guide.md#using-powershell)
-- [Connection Strings](Usage-Guide.md#scenario-6-using-connection-strings)
+- [Batch Scripts](Usage-Guide#using-batch-scripts)
+- [PowerShell Integration](Usage-Guide#using-powershell)
+- [Connection Strings](Usage-Guide#scenario-6-using-connection-strings)
 
 #### Configuration
-- [Batch Size Guidelines](Project-Summary.md#batch-size-guidelines)
-- [Thread Count Guidelines](Project-Summary.md#thread-count-guidelines)
-- [Performance Tuning](Project-Summary.md#performance-characteristics)
+- [Batch Size Guidelines](Project-Summary#batch-size-guidelines)
+- [Thread Count Guidelines](Project-Summary#thread-count-guidelines)
+- [Performance Tuning](Project-Summary#performance-characteristics)
 
 #### Troubleshooting
-- [Connection Issues](Usage-Guide.md#connection-issues)
-- [Permission Issues](Usage-Guide.md#permission-issues)
-- [Table Issues](Usage-Guide.md#table-issues)
-- [Performance Issues](Usage-Guide.md#performance-issues)
+- [Connection Issues](Usage-Guide#connection-issues)
+- [Permission Issues](Usage-Guide#permission-issues)
+- [Table Issues](Usage-Guide#table-issues)
+- [Performance Issues](Usage-Guide#performance-issues)
 
 #### Development
-- [Project Structure](Project-Summary.md#project-structure)
-- [Dependencies](Project-Summary.md#dependencies)
-- [Building and Publishing](Project-Summary.md#building-and-publishing)
+- [Project Structure](Project-Summary#project-structure)
+- [Dependencies](Project-Summary#dependencies)
+- [Building and Publishing](Project-Summary#building-and-publishing)
 
 ## ⚠️ Important Notes
 
@@ -160,9 +160,9 @@ If you need assistance:
 
 1. **Start with the basics**: Check the [README](../README.md) for quick overview
 2. **Common commands**: See [Quick Reference](../QUICK_REFERENCE.md) for command examples
-3. **Detailed scenarios**: Review the [Usage Guide](Usage-Guide.md) for comprehensive examples
-4. **Technical details**: Check [Project Summary](Project-Summary.md) for architecture info
-5. **Troubleshooting**: Use the [troubleshooting section](Usage-Guide.md#troubleshooting)
+3. **Detailed scenarios**: Review the [Usage Guide](Usage-Guide) for comprehensive examples
+4. **Technical details**: Check [Project Summary](Project-Summary) for architecture info
+5. **Troubleshooting**: Use the [troubleshooting section](Usage-Guide#troubleshooting)
 6. **Command help**: Run `./MSSQLDBSink --help` for all options
 7. **Result files**: Check JSON files in `results/` directory for run details
 

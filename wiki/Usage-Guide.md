@@ -712,7 +712,7 @@ Results saved to: results/sync-result-20260108_143525.json
 ## Need Help?
 
 1. Check the [README.md](../README.md) for overview documentation
-2. Review [Project-Summary.md](Project-Summary.md) for technical details
+2. Review [Project-Summary.md](Project-Summary) for technical details
 3. Check [QUICK_REFERENCE.md](../QUICK_REFERENCE.md) for common commands
 4. Verify server/db names are correct
 5. Verify database permissions
